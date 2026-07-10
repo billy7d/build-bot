@@ -9,12 +9,6 @@
 
 CTrade trade;
 
-enum BaselineMode
-{
-   BL_EMA_PROXY = 0,
-   BL_CUSTOM_INDICATOR = 1
-};
-
 enum EntryModeType
 {
    RSI_CROSS_EMA = 0,
@@ -31,8 +25,7 @@ enum BiasModeType
 enum TrailModeType
 {
    TRAIL_OFF = 0,
-   ATR_CHANDELIER = 1,
-   BL_TRAIL = 2
+   ATR_CHANDELIER = 1
 };
 
 input ENUM_TIMEFRAMES EntryTF = PERIOD_M15;
@@ -56,13 +49,6 @@ input EntryModeType EntryMode = RSI_ABOVE_EMA_AFTER_EXTREME;
 input BiasModeType BiasMode = HTF_VETO;
 
 input bool UseMTFBias = true;
-input bool UseBLFilter = true;
-input BaselineMode BLMode = BL_EMA_PROXY;
-input string CustomBLIndicatorName = "";
-input int CustomBLBufferIndex = 0;
-input int BLFastPeriod = 70;
-input int BLSlowPeriod = 150;
-input double MinBLSlopePoints = 0.0;
 
 input bool UseVolumeFilter = false;
 input double VolumeSpikeMultiplier = 1.8;
@@ -89,8 +75,6 @@ input int TrailLookbackBars = 22;
 input double TrailATRMultiplier = 3.0;
 input double StartTrailingAfterR = 1.5;
 input double RunnerMinPct = 25.0;
-input double LongNoChaseRSI = 68.0;
-input double MaxDistanceFromBL_ATR = 1.5;
 input bool AllowLong = true;
 input bool AllowShort = true;
 input bool Diagnostics = true;
@@ -113,13 +97,6 @@ struct TFState
    double ema2;
    double wma1;
    double wma2;
-   double close1;
-   double bl1;
-   double bl2;
-   double blFast1;
-   double blFast2;
-   double blSlow1;
-   double blSlow2;
    double atr1;
    bool crossRSIUpEMA;
    bool crossRSIDownEMA;
@@ -147,9 +124,6 @@ struct RiskPlan
 
 ENUM_TIMEFRAMES DataTFs[4] = { PERIOD_D1, PERIOD_H4, PERIOD_H1, PERIOD_M15 };
 int rsiHandles[4];
-int blFastHandles[4];
-int blSlowHandles[4];
-int blCustomHandles[4];
 int atrHandles[4];
 
 datetime lastEntryBarTime = 0;
@@ -165,15 +139,12 @@ int armedShortBars = 0;
 int diagArmedLong = 0;
 int diagArmedShort = 0;
 int diagRejectBias = 0;
-int diagRejectBL = 0;
 int diagRejectChop = 0;
 int diagRejectRisk = 0;
 int diagRejectCurl = 0;
 int diagRejectCross = 0;
 int diagRejectEMASide = 0;
 int diagRejectVolume = 0;
-int diagRejectLongNoChase = 0;
-int diagRejectLongFarFromBL = 0;
 int diagTrailExit = 0;
 int diagEntryBars = 0;
 int diagTradesOpened = 0;
@@ -201,30 +172,14 @@ int OnInit()
    for(int i = 0; i < 4; i++)
    {
       rsiHandles[i] = iRSI(_Symbol, DataTFs[i], RSIPeriod, PRICE_CLOSE);
-      blFastHandles[i] = iMA(_Symbol, DataTFs[i], BLFastPeriod, 0, MODE_EMA, PRICE_CLOSE);
-      blSlowHandles[i] = iMA(_Symbol, DataTFs[i], BLSlowPeriod, 0, MODE_EMA, PRICE_CLOSE);
       atrHandles[i] = iATR(_Symbol, DataTFs[i], ATRPeriod);
-      blCustomHandles[i] = INVALID_HANDLE;
 
-      if(BLMode == BL_CUSTOM_INDICATOR && CustomBLIndicatorName != "")
-         blCustomHandles[i] = iCustom(_Symbol, DataTFs[i], CustomBLIndicatorName);
-
-      if(rsiHandles[i] == INVALID_HANDLE || blFastHandles[i] == INVALID_HANDLE || blSlowHandles[i] == INVALID_HANDLE || atrHandles[i] == INVALID_HANDLE)
+      if(rsiHandles[i] == INVALID_HANDLE || atrHandles[i] == INVALID_HANDLE)
       {
          Print("Failed to create core indicator handles for ", TFName(DataTFs[i]));
          return INIT_FAILED;
       }
-
-      if(BLMode == BL_CUSTOM_INDICATOR && CustomBLIndicatorName != "" && blCustomHandles[i] == INVALID_HANDLE)
-      {
-         Print("Custom BL unavailable on ", TFName(DataTFs[i]), ". Using EMA70/150 proxy for this run.");
-      }
    }
-
-   if(BLMode == BL_EMA_PROXY || CustomBLIndicatorName == "")
-      Print("BL mode: EMA proxy. This is not the mentor custom BL unless the proxy has been validated.");
-   else
-      Print("BL mode: custom indicator=", CustomBLIndicatorName, " buffer=", CustomBLBufferIndex);
 
    if(TfIndex(EntryTF) < 0)
    {
@@ -244,10 +199,9 @@ int OnInit()
       if(diagCsvHandle != INVALID_HANDLE)
       {
          FileWrite(diagCsvHandle, "time", "entry_tf", "entry_mode", "bias_mode", "armed_long", "armed_short",
-                   "bias_bull", "bias_bear", "reject_bias", "reject_bl", "reject_chop",
+                   "bias_bull", "bias_bear", "reject_bias", "reject_chop",
                    "reject_risk", "reject_curl", "reject_cross", "reject_ema_side",
-                   "reject_volume", "reject_long_no_chase", "reject_long_far_from_bl",
-                   "entry_distance_bl_atr", "entry_state", "snapshot");
+                   "reject_volume", "entry_state", "snapshot");
       }
       else
       {
@@ -272,14 +226,8 @@ void OnDeinit(const int reason)
    {
       if(rsiHandles[i] != INVALID_HANDLE)
          IndicatorRelease(rsiHandles[i]);
-      if(blFastHandles[i] != INVALID_HANDLE)
-         IndicatorRelease(blFastHandles[i]);
-      if(blSlowHandles[i] != INVALID_HANDLE)
-         IndicatorRelease(blSlowHandles[i]);
       if(atrHandles[i] != INVALID_HANDLE)
          IndicatorRelease(atrHandles[i]);
-      if(blCustomHandles[i] != INVALID_HANDLE)
-         IndicatorRelease(blCustomHandles[i]);
    }
 }
 
@@ -320,7 +268,7 @@ void OnTick()
    bool shortBias = BiasAllowsShort(d1, h4, h1, bearCount);
 
    string reject = "";
-   if(AllowLong && LongSignal(entry, h4, longBias, reject))
+   if(AllowLong && LongSignal(entry, longBias, reject))
    {
       OpenTrade(ORDER_TYPE_BUY, entry, d1, h4, h1, m15);
       if(HasOpenPosition())
@@ -330,7 +278,7 @@ void OnTick()
       TrackReject(reject);
 
    reject = "";
-   if(AllowShort && ShortSignal(entry, h4, shortBias, reject))
+   if(AllowShort && ShortSignal(entry, shortBias, reject))
       OpenTrade(ORDER_TYPE_SELL, entry, d1, h4, h1, m15);
    else if(AllowShort && ShortSetupActive(entry))
       TrackReject(reject);
@@ -346,32 +294,18 @@ bool BuildState(ENUM_TIMEFRAMES tf, TFState &s)
 
    const int need = 260;
    double rsi[];
-   double blFast[];
-   double blSlow[];
-   double blCustom[];
    double atr[];
    MqlRates rates[];
    ArraySetAsSeries(rsi, true);
-   ArraySetAsSeries(blFast, true);
-   ArraySetAsSeries(blSlow, true);
-   ArraySetAsSeries(blCustom, true);
    ArraySetAsSeries(atr, true);
    ArraySetAsSeries(rates, true);
 
    if(CopyBuffer(rsiHandles[idx], 0, 0, need, rsi) < need)
       return false;
-   if(CopyBuffer(blFastHandles[idx], 0, 0, need, blFast) < need)
-      return false;
-   if(CopyBuffer(blSlowHandles[idx], 0, 0, need, blSlow) < need)
-      return false;
    if(CopyBuffer(atrHandles[idx], 0, 0, need, atr) < need)
       return false;
    if(CopyRates(_Symbol, tf, 0, need, rates) < need)
       return false;
-
-   bool customBLReady = false;
-   if(BLMode == BL_CUSTOM_INDICATOR && blCustomHandles[idx] != INVALID_HANDLE)
-      customBLReady = (CopyBuffer(blCustomHandles[idx], CustomBLBufferIndex, 0, need, blCustom) >= need);
 
    s.tf = tf;
    s.rsi1 = rsi[1];
@@ -380,13 +314,6 @@ bool BuildState(ENUM_TIMEFRAMES tf, TFState &s)
    s.ema2 = EMAOnSeries(rsi, RSI_EMA_Period, 2, need);
    s.wma1 = WMAOnSeries(rsi, RSI_WMA_Period, 1, need);
    s.wma2 = WMAOnSeries(rsi, RSI_WMA_Period, 2, need);
-   s.close1 = rates[1].close;
-   s.blFast1 = blFast[1];
-   s.blFast2 = blFast[2];
-   s.blSlow1 = blSlow[1];
-   s.blSlow2 = blSlow[2];
-   s.bl1 = customBLReady ? blCustom[1] : blFast[1];
-   s.bl2 = customBLReady ? blCustom[2] : blFast[2];
    s.atr1 = atr[1];
    s.crossRSIUpEMA = (s.rsi2 <= s.ema2 && s.rsi1 > s.ema1);
    s.crossRSIDownEMA = (s.rsi2 >= s.ema2 && s.rsi1 < s.ema1);
@@ -462,15 +389,12 @@ void UpdateArmedState(const TFState &entry)
 
 BiasState GetBias(const TFState &s)
 {
-   double minSlope = MinBLSlopePoints * _Point;
-   bool blUp = (s.close1 > s.bl1 && s.bl1 - s.bl2 >= minSlope);
-   bool blDown = (s.close1 < s.bl1 && s.bl2 - s.bl1 >= minSlope);
    bool rsiBull = (s.rsi1 > s.ema1 && s.ema1 >= s.wma1 && s.wma1 >= s.wma2);
    bool rsiBear = (s.rsi1 < s.ema1 && s.ema1 <= s.wma1 && s.wma1 <= s.wma2);
 
-   if(rsiBull && (!UseBLFilter || blUp))
+   if(rsiBull)
       return BIAS_BULL;
-   if(rsiBear && (!UseBLFilter || blDown))
+   if(rsiBear)
       return BIAS_BEAR;
 
    return BIAS_NEUTRAL;
@@ -483,8 +407,7 @@ bool IsChop(const TFState &s)
 
    bool rsiMid = (s.rsi1 >= ChopMinRSI && s.rsi1 <= ChopMaxRSI);
    bool maTight = (MathAbs(s.ema1 - s.wma1) <= ChopMAProximity);
-   bool blFlat = (MathAbs(s.bl1 - s.bl2) <= MinBLSlopePoints * _Point);
-   return (rsiMid && maTight && blFlat);
+   return (rsiMid && maTight);
 }
 
 bool HasVolumeSpike(const MqlRates &rates[])
@@ -530,33 +453,6 @@ bool BiasAllowsShort(const TFState &d1, const TFState &h4, const TFState &h1, in
    return (d1.bias != BIAS_BULL && h4.bias != BIAS_BULL && (h4.bias == BIAS_BEAR || h1.bias == BIAS_BEAR));
 }
 
-double DistanceFromBLInATR(const TFState &s)
-{
-   if(s.atr1 <= 0.0)
-      return 0.0;
-   return MathAbs(s.close1 - s.bl1) / s.atr1;
-}
-
-bool LongNoChasePass(const TFState &entry, const TFState &h4, string &reject)
-{
-   double entryDistance = DistanceFromBLInATR(entry);
-   double h4Distance = DistanceFromBLInATR(h4);
-
-   if(MaxDistanceFromBL_ATR > 0.0 && entry.close1 > entry.bl1 && entryDistance > MaxDistanceFromBL_ATR)
-   {
-      reject = "long_far_from_bl";
-      return false;
-   }
-
-   if(MaxDistanceFromBL_ATR > 0.0 && h4.rsi1 >= LongNoChaseRSI && h4.close1 > h4.bl1 && h4Distance > MaxDistanceFromBL_ATR)
-   {
-      reject = "long_no_chase";
-      return false;
-   }
-
-   return true;
-}
-
 bool LongSetupActive(const TFState &entry)
 {
    if(EntryMode == RSI_PULLBACK_CONTINUATION)
@@ -571,7 +467,7 @@ bool ShortSetupActive(const TFState &entry)
    return (armedShortBars > 0);
 }
 
-bool LongSignal(const TFState &entry, const TFState &h4, bool biasOK, string &reject)
+bool LongSignal(const TFState &entry, bool biasOK, string &reject)
 {
    if(!LongSetupActive(entry))
    {
@@ -593,14 +489,6 @@ bool LongSignal(const TFState &entry, const TFState &h4, bool biasOK, string &re
       reject = "volume";
       return false;
    }
-   if(UseBLFilter && entry.close1 < entry.bl1 && entry.bl1 < entry.bl2)
-   {
-      reject = "bl";
-      return false;
-   }
-   if(!LongNoChasePass(entry, h4, reject))
-      return false;
-
    bool curlUp = (entry.rsi1 > entry.rsi2);
    if(!curlUp)
    {
@@ -651,7 +539,7 @@ bool LongSignal(const TFState &entry, const TFState &h4, bool biasOK, string &re
    return false;
 }
 
-bool ShortSignal(const TFState &entry, const TFState &h4, bool biasOK, string &reject)
+bool ShortSignal(const TFState &entry, bool biasOK, string &reject)
 {
    if(!ShortSetupActive(entry))
    {
@@ -673,12 +561,6 @@ bool ShortSignal(const TFState &entry, const TFState &h4, bool biasOK, string &r
       reject = "volume";
       return false;
    }
-   if(UseBLFilter && entry.close1 > entry.bl1 && entry.bl1 > entry.bl2)
-   {
-      reject = "bl";
-      return false;
-   }
-
    bool curlDown = (entry.rsi1 < entry.rsi2);
    if(!curlDown)
    {
@@ -988,15 +870,13 @@ void ManageOpenPosition()
    if(positionType == POSITION_TYPE_BUY)
    {
       bool h4Exit = (h4.rsi2 > Overbought && h4.rsi1 < h4.rsi2 && h4.crossRSIDownEMA);
-      bool blExit = (UseBLFilter && h4.close1 < h4.bl1);
-      if(h4Exit || blExit)
+      if(h4Exit)
          trade.PositionClose(_Symbol);
    }
    else
    {
       bool h4Exit = (h4.rsi2 < Oversold && h4.rsi1 > h4.rsi2 && h4.crossRSIUpEMA);
-      bool blExit = (UseBLFilter && h4.close1 > h4.bl1);
-      if(h4Exit || blExit)
+      if(h4Exit)
          trade.PositionClose(_Symbol);
    }
 }
@@ -1015,8 +895,6 @@ void ApplyTrailingStop(long positionType, double currentSL, double tp, const TFS
 
    if(TrailMode == ATR_CHANDELIER)
       trailSL = ChandelierTrailSL(positionType, entryState.atr1);
-   else if(TrailMode == BL_TRAIL)
-      trailSL = entryState.bl1;
 
    if(trailSL <= 0.0)
       return;
@@ -1112,8 +990,6 @@ string TrailModeText()
 {
    if(TrailMode == ATR_CHANDELIER)
       return "ATR_CHANDELIER";
-   if(TrailMode == BL_TRAIL)
-      return "BL_TRAIL";
    return "OFF";
 }
 
@@ -1131,9 +1007,7 @@ string StateText(const TFState &s)
    return TFName(s.tf) + ":RSI=" + DoubleToString(s.rsi1, 2) +
           ",EMA=" + DoubleToString(s.ema1, 2) +
           ",WMA=" + DoubleToString(s.wma1, 2) +
-          ",BL=" + DoubleToString(s.bl1, _Digits) +
           ",ATR=" + DoubleToString(s.atr1, _Digits) +
-          ",DistBL_ATR=" + DoubleToString(DistanceFromBLInATR(s), 2) +
           ",bias=" + BiasText(s.bias);
 }
 
@@ -1146,8 +1020,6 @@ void TrackReject(string reason)
 {
    if(reason == "bias")
       diagRejectBias++;
-   else if(reason == "bl")
-      diagRejectBL++;
    else if(reason == "chop")
       diagRejectChop++;
    else if(reason == "curl")
@@ -1158,10 +1030,6 @@ void TrackReject(string reason)
       diagRejectEMASide++;
    else if(reason == "volume")
       diagRejectVolume++;
-   else if(reason == "long_no_chase")
-      diagRejectLongNoChase++;
-   else if(reason == "long_far_from_bl")
-      diagRejectLongFarFromBL++;
 }
 
 void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, const TFState &m15, const TFState &entry, int bullCount, int bearCount)
@@ -1173,15 +1041,13 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
    string entryModeText = EntryModeText();
    string biasModeText = BiasModeText();
    string snapshot = Snapshot(d1, h4, h1, m15);
-   double entryDistance = DistanceFromBLInATR(entry);
 
    if(diagCsvHandle != INVALID_HANDLE)
    {
       FileWrite(diagCsvHandle, TimeToString(lastEntryBarTime), TFName(EntryTF), entryModeText, biasModeText,
                 armedLongBars, armedShortBars, bullCount, bearCount, diagRejectBias,
-                diagRejectBL, diagRejectChop, diagRejectRisk, diagRejectCurl,
-                diagRejectCross, diagRejectEMASide, diagRejectVolume, diagRejectLongNoChase,
-                diagRejectLongFarFromBL, DoubleToString(entryDistance, 2), StateText(entry), snapshot);
+                diagRejectChop, diagRejectRisk, diagRejectCurl,
+                diagRejectCross, diagRejectEMASide, diagRejectVolume, StateText(entry), snapshot);
    }
 
    if(!shouldPrint)
@@ -1196,17 +1062,13 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
          " biasBull=", bullCount,
          " biasBear=", bearCount,
          " rejects[bias=", diagRejectBias,
-         ",bl=", diagRejectBL,
          ",chop=", diagRejectChop,
          ",risk=", diagRejectRisk,
          ",curl=", diagRejectCurl,
          ",cross=", diagRejectCross,
          ",emaSide=", diagRejectEMASide,
          ",volume=", diagRejectVolume,
-         ",longNoChase=", diagRejectLongNoChase,
-         ",longFarBL=", diagRejectLongFarFromBL,
          "] entry=", StateText(entry),
-         " entryDistBL_ATR=", DoubleToString(entryDistance, 2),
          " snapshot=", snapshot);
 }
 
@@ -1220,15 +1082,12 @@ void PrintDiagnosticsSummary(string source)
          " armedLong=", diagArmedLong,
          " armedShort=", diagArmedShort,
          " rejects[bias=", diagRejectBias,
-         ",bl=", diagRejectBL,
          ",chop=", diagRejectChop,
          ",risk=", diagRejectRisk,
          ",curl=", diagRejectCurl,
          ",cross=", diagRejectCross,
          ",emaSide=", diagRejectEMASide,
          ",volume=", diagRejectVolume,
-         ",longNoChase=", diagRejectLongNoChase,
-         ",longFarBL=", diagRejectLongFarFromBL,
          ",trailUpdates=", diagTrailExit,
          "] EntryMode=", EntryModeText(),
          " BiasMode=", BiasModeText(),
