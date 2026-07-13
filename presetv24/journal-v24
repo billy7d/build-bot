@@ -1,0 +1,5 @@
+2026.07.12 23:40:40.714	Core 01	2022.12.30 23:59:59   DIAG_SUMMARY core source=OnTester bars=10801 trades=183 longTrades=92 shortTrades=91 armedLong=9155 armedShort=9349
+2026.07.12 23:40:40.714	Core 01	2022.12.30 23:59:59   DIAG_SUMMARY rejects source=OnTester bias=15226 chop=843 risk=1875 curl=2034 cross=0 emaSide=497 volume=0 trailUpdates=305
+2026.07.12 23:40:40.714	Core 01	2022.12.30 23:59:59   DIAG_SUMMARY pyramid source=OnTester cycles=183 add1=1 add2=0 skipLocked=0 skipMinLot=106011 skipSpread=28338 skipMargin=0 stopModifyFail=8584 postFillViolation=0 worstStopPnLR=3.70
+2026.07.12 23:40:40.714	Core 01	2022.12.30 23:59:59   DIAG_SUMMARY params source=OnTester EntryMode=RSI_PULLBACK_CONTINUATION BiasMode=HTF_VETO TrailMode=ATR_CHANDELIER LongArmLevel=40.00 ShortArmLevel=60.00 LookbackExtremeBars=24 MaxSetupAgeBars=72
+2026.07.12 23:40:40.714	Core 01	2022.12.30 23:59:59   DIAG_SUMMARY params2 source=OnTester PullbackLongLevel=50.00 PullbackShortLevel=50.00 PullbackLookbackBars=24 UsePyramiding=true PyramidAccountMode=PYRAMID_AUTO ActivePyramidMode=PYRAMID_HEDGING_GROUP MaxPyramidAdds=1
