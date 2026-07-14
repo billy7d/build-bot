@@ -85,6 +85,18 @@ input double RunnerMinPct = 25.0;
 input bool AllowLong = true;
 input bool AllowShort = true;
 
+// Optional long-side quality gates. Disabled by default to preserve baseline behavior.
+input bool UseLongQualityFilter = false;
+input bool LongRequireD1OrH4Bull = false;
+input bool LongRequireH4Bull = false;
+input double LongEntryRSIMax = 100.0;
+input double LongH4RSIMin = 0.0;
+input bool UseShortQualityFilter = false;
+input bool ShortRequireD1OrH4Bear = false;
+input bool ShortRequireH4Bear = false;
+input double ShortEntryRSIMin = 0.0;
+input double ShortH4RSIMax = 100.0;
+
 // Profit-funded pyramiding. Disabled unless explicitly tested.
 input bool UsePyramiding = false;
 input PyramidAccountModeType PyramidAccountMode = PYRAMID_AUTO;
@@ -192,6 +204,8 @@ int diagRejectCurl = 0;
 int diagRejectCross = 0;
 int diagRejectEMASide = 0;
 int diagRejectVolume = 0;
+int diagRejectLongQuality = 0;
+int diagRejectShortQuality = 0;
 int diagTrailExit = 0;
 int diagEntryBars = 0;
 int diagTradesOpened = 0;
@@ -286,6 +300,13 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   if(LongEntryRSIMax < 0.0 || LongEntryRSIMax > 100.0 || LongH4RSIMin < 0.0 || LongH4RSIMin > 100.0 ||
+      ShortEntryRSIMin < 0.0 || ShortEntryRSIMin > 100.0 || ShortH4RSIMax < 0.0 || ShortH4RSIMax > 100.0)
+   {
+      Print("Quality RSI thresholds must be between 0 and 100.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
    if(ExportDiagnosticsCsv)
    {
       diagCsvHandle = FileOpen("Mentor_RSI_MTF_diag.csv", FILE_WRITE | FILE_CSV | FILE_ANSI);
@@ -294,7 +315,7 @@ int OnInit()
          FileWrite(diagCsvHandle, "time", "entry_tf", "entry_mode", "bias_mode", "armed_long", "armed_short",
                    "bias_bull", "bias_bear", "reject_bias", "reject_chop",
                    "reject_risk", "reject_curl", "reject_cross", "reject_ema_side",
-                   "reject_volume", "pyramid_adds", "pyramid_skip_locked", "pyramid_skip_minlot",
+                   "reject_volume", "reject_long_quality", "reject_short_quality", "pyramid_adds", "pyramid_skip_locked", "pyramid_skip_minlot",
                    "pyramid_skip_spread", "pyramid_skip_margin", "entry_state", "snapshot");
       }
       else
@@ -363,7 +384,7 @@ void OnTick()
    bool shortBias = BiasAllowsShort(d1, h4, h1, bearCount);
 
    string reject = "";
-   if(AllowLong && LongSignal(entry, longBias, reject))
+   if(AllowLong && LongSignal(entry, d1, h4, h1, longBias, reject))
    {
       OpenTrade(ORDER_TYPE_BUY, entry, d1, h4, h1, m15);
       if(HasOpenPosition())
@@ -373,7 +394,7 @@ void OnTick()
       TrackReject(reject);
 
    reject = "";
-   if(AllowShort && ShortSignal(entry, shortBias, reject))
+   if(AllowShort && ShortSignal(entry, d1, h4, h1, shortBias, reject))
       OpenTrade(ORDER_TYPE_SELL, entry, d1, h4, h1, m15);
    else if(AllowShort && ShortSetupActive(entry))
       TrackReject(reject);
@@ -548,6 +569,40 @@ bool BiasAllowsShort(const TFState &d1, const TFState &h4, const TFState &h1, in
    return (d1.bias != BIAS_BULL && h4.bias != BIAS_BULL && (h4.bias == BIAS_BEAR || h1.bias == BIAS_BEAR));
 }
 
+bool LongQualityAllows(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1)
+{
+   if(!UseLongQualityFilter)
+      return true;
+
+   if(LongEntryRSIMax < 100.0 && entry.rsi1 > LongEntryRSIMax)
+      return false;
+   if(LongH4RSIMin > 0.0 && h4.rsi1 < LongH4RSIMin)
+      return false;
+   if(LongRequireH4Bull && h4.bias != BIAS_BULL)
+      return false;
+   if(LongRequireD1OrH4Bull && d1.bias != BIAS_BULL && h4.bias != BIAS_BULL)
+      return false;
+
+   return true;
+}
+
+bool ShortQualityAllows(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1)
+{
+   if(!UseShortQualityFilter)
+      return true;
+
+   if(ShortEntryRSIMin > 0.0 && entry.rsi1 < ShortEntryRSIMin)
+      return false;
+   if(ShortH4RSIMax < 100.0 && h4.rsi1 > ShortH4RSIMax)
+      return false;
+   if(ShortRequireH4Bear && h4.bias != BIAS_BEAR)
+      return false;
+   if(ShortRequireD1OrH4Bear && d1.bias != BIAS_BEAR && h4.bias != BIAS_BEAR)
+      return false;
+
+   return true;
+}
+
 bool LongSetupActive(const TFState &entry)
 {
    if(EntryMode == RSI_PULLBACK_CONTINUATION)
@@ -562,7 +617,7 @@ bool ShortSetupActive(const TFState &entry)
    return (armedShortBars > 0);
 }
 
-bool LongSignal(const TFState &entry, bool biasOK, string &reject)
+bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, bool biasOK, string &reject)
 {
    if(!LongSetupActive(entry))
    {
@@ -572,6 +627,11 @@ bool LongSignal(const TFState &entry, bool biasOK, string &reject)
    if(!biasOK)
    {
       reject = "bias";
+      return false;
+   }
+   if(!LongQualityAllows(entry, d1, h4, h1))
+   {
+      reject = "long_quality";
       return false;
    }
    if(entry.chop)
@@ -634,7 +694,7 @@ bool LongSignal(const TFState &entry, bool biasOK, string &reject)
    return false;
 }
 
-bool ShortSignal(const TFState &entry, bool biasOK, string &reject)
+bool ShortSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, bool biasOK, string &reject)
 {
    if(!ShortSetupActive(entry))
    {
@@ -644,6 +704,11 @@ bool ShortSignal(const TFState &entry, bool biasOK, string &reject)
    if(!biasOK)
    {
       reject = "bias";
+      return false;
+   }
+   if(!ShortQualityAllows(entry, d1, h4, h1))
+   {
+      reject = "short_quality";
       return false;
    }
    if(entry.chop)
@@ -1806,9 +1871,6 @@ void TryPyramidAdd(long positionType, const TFState &entry, const TFState &h1, c
    {
       if(rp.reason == "raw_lot_below_min_lot" || rp.reason == "normalized_lot_below_min_lot")
          diagPyramidSkipMinLot++;
-      Print("PYRAMID skip add", stage, " reason=", rp.reason,
-            " desiredRisk=", DoubleToString(rp.desiredRiskMoney, 2),
-            " rawLots=", DoubleToString(rp.rawLots, 4));
       return;
    }
 
@@ -2115,6 +2177,10 @@ void TrackReject(string reason)
       diagRejectEMASide++;
    else if(reason == "volume")
       diagRejectVolume++;
+   else if(reason == "long_quality")
+      diagRejectLongQuality++;
+   else if(reason == "short_quality")
+      diagRejectShortQuality++;
 }
 
 void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, const TFState &m15, const TFState &entry, int bullCount, int bearCount)
@@ -2132,7 +2198,7 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
       FileWrite(diagCsvHandle, TimeToString(lastEntryBarTime), TFName(EntryTF), entryModeText, biasModeText,
                 armedLongBars, armedShortBars, bullCount, bearCount, diagRejectBias,
                 diagRejectChop, diagRejectRisk, diagRejectCurl,
-                diagRejectCross, diagRejectEMASide, diagRejectVolume, pyramidAddCount,
+                diagRejectCross, diagRejectEMASide, diagRejectVolume, diagRejectLongQuality, diagRejectShortQuality, pyramidAddCount,
                 diagPyramidSkipLockedPnl, diagPyramidSkipMinLot, diagPyramidSkipSpread,
                 diagPyramidSkipMargin, StateText(entry), snapshot);
    }
@@ -2155,6 +2221,8 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
          ",cross=", diagRejectCross,
          ",emaSide=", diagRejectEMASide,
          ",volume=", diagRejectVolume,
+         ",longQuality=", diagRejectLongQuality,
+         ",shortQuality=", diagRejectShortQuality,
          "] entry=", StateText(entry),
          " snapshot=", snapshot);
 }
@@ -2180,6 +2248,8 @@ void PrintDiagnosticsSummary(string source)
    rejects += " cross=" + IntegerToString(diagRejectCross);
    rejects += " emaSide=" + IntegerToString(diagRejectEMASide);
    rejects += " volume=" + IntegerToString(diagRejectVolume);
+   rejects += " longQuality=" + IntegerToString(diagRejectLongQuality);
+   rejects += " shortQuality=" + IntegerToString(diagRejectShortQuality);
    rejects += " trailUpdates=" + IntegerToString(diagTrailExit);
    Print(rejects);
 
@@ -2216,4 +2286,20 @@ void PrintDiagnosticsSummary(string source)
    params2 += " ActivePyramidMode=" + PyramidAccountModeText(activePyramidAccountMode);
    params2 += " MaxPyramidAdds=" + IntegerToString(MaxPyramidAdds);
    Print(params2);
+
+   string longQuality = "DIAG_SUMMARY longQuality source=" + source;
+   longQuality += " use=" + (UseLongQualityFilter ? "true" : "false");
+   longQuality += " d1OrH4Bull=" + (LongRequireD1OrH4Bull ? "true" : "false");
+   longQuality += " h4Bull=" + (LongRequireH4Bull ? "true" : "false");
+   longQuality += " entryRSIMax=" + DoubleToString(LongEntryRSIMax, 2);
+   longQuality += " h4RSIMin=" + DoubleToString(LongH4RSIMin, 2);
+   Print(longQuality);
+
+   string shortQuality = "DIAG_SUMMARY shortQuality source=" + source;
+   shortQuality += " use=" + (UseShortQualityFilter ? "true" : "false");
+   shortQuality += " d1OrH4Bear=" + (ShortRequireD1OrH4Bear ? "true" : "false");
+   shortQuality += " h4Bear=" + (ShortRequireH4Bear ? "true" : "false");
+   shortQuality += " entryRSIMin=" + DoubleToString(ShortEntryRSIMin, 2);
+   shortQuality += " h4RSIMax=" + DoubleToString(ShortH4RSIMax, 2);
+   Print(shortQuality);
 }

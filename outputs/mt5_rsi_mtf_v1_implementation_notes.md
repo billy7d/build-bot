@@ -257,6 +257,42 @@ Kết quả Pseudo-OOS 2025-01-01 đến 2026-07-01, deposit 5,000 USD:
 
 Kết luận sau rerun sạch: V26 là baseline pyramid chính thức cho vòng tiếp theo. V26 thắng V23 ở Development, Validation và Pseudo-OOS; Net Profit và Expected Payoff cao hơn, Equity DD thấp hơn ở Validation/OOS, `stopModifyFail=0`, `postFillViolation=0`. Tuy nhiên Profit Factor OOS vẫn chỉ `1.04`, nên vòng tiếp theo không nên tăng risk; cần tiếp tục cải thiện chất lượng tín hiệu, đặc biệt Long PF OOS vẫn dưới `1.0`. V28 bị loại khỏi vị trí winner vì yếu hơn V23/V26 ở Validation và không hơn V23 ở OOS.
 
+## Vòng cải thiện chất lượng tín hiệu V29-V40
+
+Mục tiêu vòng này là nâng Long PF và PF tổng thể mà vẫn giữ lõi RSI MTF, không thêm BL, Volume, VWAP hoặc Trap. EA được bổ sung các bộ lọc chất lượng tùy chọn, mặc định tắt để preset cũ giữ nguyên hành vi:
+
+- `UseLongQualityFilter`, `LongRequireD1OrH4Bull`, `LongRequireH4Bull`, `LongEntryRSIMax`, `LongH4RSIMin`.
+- `UseShortQualityFilter`, `ShortRequireD1OrH4Bear`, `ShortRequireH4Bear`, `ShortEntryRSIMin`, `ShortH4RSIMax`.
+- Diagnostic thêm `longQuality` và `shortQuality` trong `DIAG_SUMMARY rejects`.
+- Đã bỏ log spam `PYRAMID skip add... raw_lot_below_min_lot`; EA vẫn đếm `skipMinLot` nhưng không in lặp theo tick. Việc này giúp Strategy Tester chạy ổn hơn và giảm nhiễu journal/live.
+
+Nhánh long-quality:
+
+| Preset | Thay đổi chính | Development PF | Validation PF | OOS PF | Long PF OOS | Kết luận |
+|---|---|---:|---:|---:|---:|---|
+| V29 | Long phải có D1 hoặc H4 bullish | `1.15` | `1.07` | chưa chạy | chưa chạy | Không thắng V26 validation |
+| V30 | V29 + không chase long khi RSI entry `> 68` | `1.17` | `1.05` | `1.10` | `1.04` | Cải thiện Long PF/OOS, nhưng chưa thay V26 vì validation yếu hơn |
+
+So với V26, V30 cải thiện rõ Pseudo-OOS 2025-01-01 đến 2026-07-01: Net Profit `+279.07` so với `+106.31`, PF `1.10` so với `1.04`, Equity DD `5.15%` so với `5.78%`, Long PF `1.04` so với `0.95`. Tuy vậy trên Validation 2023-2024, V30 chỉ đạt PF `1.05`, thấp hơn V26 PF `1.11`; nguyên nhân chính là short side giảm còn Short PF `0.84`. Vì vậy V30 được giữ làm candidate nghiên cứu long-quality, chưa thay baseline V26.
+
+Nhánh short-quality filter V33-V36 bị loại trên Development. Các điều kiện short kiểu `ShortRequireD1OrH4Bear`, `ShortRequireH4Bear` hoặc `ShortEntryRSIMin=35` không cải thiện tổng thể: PF chỉ nằm trong vùng `1.07` đến `1.13`, có preset DD lên `12.46%`, và không tốt hơn V30/V26.
+
+Nhánh chỉnh RSI core của short bằng `PullbackShortLevel`:
+
+| Preset | Thay đổi chính | Development PF | Development DD | Validation PF | OOS PF | Kết luận |
+|---|---|---:|---:|---:|---:|---|
+| V37 | `PullbackShortLevel=55` | `1.16` | `5.90%` | chưa chạy | chưa chạy | Không vượt V30 development |
+| V38 | `ShortArmLevel=65`, `PullbackShortLevel=55` | `1.16` | `5.83%` | chưa chạy | chưa chạy | Gần V37, không đủ tốt |
+| V39 | `PullbackShortLevel=60` | `1.23` | `6.34%` | `0.99` | chưa chạy | Overfit development, validation âm |
+| V40 | `ShortArmLevel=65`, `PullbackShortLevel=60` | `1.25` | `5.92%` | `1.06` | `0.90` | Overfit, OOS âm |
+
+Kết luận vòng V29-V40:
+
+- V26 vẫn là baseline chính thức vì ổn định hơn qua Development, Validation và OOS.
+- V30 là hướng tín hiệu đáng giữ lại cho vòng sau vì nâng Long PF và OOS, nhưng cần xử lý short side trước khi thay baseline.
+- V39/V40 không được dùng dù development đẹp, vì validation/OOS cho thấy overfit.
+- Vòng tiếp theo nên ưu tiên cải thiện exit/trailing hoặc điều kiện thoát riêng cho short trong giai đoạn thị trường bullish, thay vì thêm filter bias cứng.
+
 ## Lưu ý quan trọng
 
 Với BTCUSD và tài khoản 1,000 USD, broker có thể bắt lot tối thiểu 0.01. Nếu risk 0.5% quá nhỏ, bot sẽ skip nhiều lệnh. Để test đúng risk engine, hãy so sánh:
