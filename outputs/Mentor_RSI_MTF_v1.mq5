@@ -13,13 +13,48 @@ enum EntryModeType
 {
    RSI_CROSS_EMA = 0,
    RSI_ABOVE_EMA_AFTER_EXTREME = 1,
-   RSI_PULLBACK_CONTINUATION = 2
+   RSI_PULLBACK_CONTINUATION = 2,
+   RSI_FAN_STRUCTURE = 3
+};
+
+enum FanEntrySelectionType
+{
+   FAN_FIRST_VALID = 0,
+   FAN_ENTRY1_ONLY = 1,
+   FAN_ENTRY2_ONLY = 2,
+   FAN_ENTRY3_ONLY = 3
+};
+
+enum FanEntryPointType
+{
+   FAN_ENTRY_NONE = 0,
+   FAN_ENTRY1 = 1,
+   FAN_ENTRY2 = 2,
+   FAN_ENTRY3 = 3
+};
+
+enum FanPhaseType
+{
+   FAN_IDLE = 0,
+   FAN_WAIT_FIRST_CROSS = 1,
+   FAN_WAIT_RETEST = 2,
+   FAN_WAIT_CONFIRM = 3,
+   FAN_WAIT_ENTRY2 = 4,
+   FAN_WAIT_ENTRY3 = 5,
+   FAN_COMPLETE = 6
 };
 
 enum BiasModeType
 {
    STRICT_COUNT = 0,
    HTF_VETO = 1
+};
+
+enum RegimeGateModeType
+{
+   REGIME_GATE_OFF = 0,
+   REGIME_D1_EARLY_VETO = 1,
+   REGIME_D1_H4_COMPOSITE_VETO = 2
 };
 
 enum TrailModeType
@@ -54,6 +89,17 @@ input int PullbackLookbackBars = 24;
 input int MinAlignedTimeframes = 2;
 input EntryModeType EntryMode = RSI_ABOVE_EMA_AFTER_EXTREME;
 input BiasModeType BiasMode = HTF_VETO;
+input RegimeGateModeType RegimeGateMode = REGIME_GATE_OFF;
+
+// RSI fan structure: RSI, EMA9-RSI and WMA45-RSI converge, expand, then confirm a reversal.
+input FanEntrySelectionType FanEntrySelection = FAN_FIRST_VALID;
+input int FanOriginCrossWindowBars = 12;
+input double FanOriginMaxSpread = 3.0;
+input double FanMinExpansion = 4.0;
+input double FanMinHigherLowRSI = 1.5;
+input int FanMaxAgeBars = 72;
+input int FanEntry2MinBarsAfterEntry1 = 1;
+input bool FanAllowDirectWMAEntry = true;
 
 input bool UseMTFBias = true;
 
@@ -82,6 +128,24 @@ input int TrailLookbackBars = 22;
 input double TrailATRMultiplier = 3.0;
 input double StartTrailingAfterR = 1.5;
 input double RunnerMinPct = 25.0;
+
+// Optional directional exit profile. Disabled by default to preserve baseline behavior.
+input bool UseDirectionalExitProfile = false;
+input double LongTP1_R = 1.0;
+input double ShortTP1_R = 1.0;
+input double LongBreakEvenTriggerR = 1.0;
+input double ShortBreakEvenTriggerR = 1.0;
+input double LongStartTrailingAfterR = 1.5;
+input double ShortStartTrailingAfterR = 1.5;
+input double LongTrailATRMultiplier = 3.0;
+input double ShortTrailATRMultiplier = 3.0;
+input double LongTP2RSILevel = 65.0;
+input double ShortTP2RSILevel = 35.0;
+input double LongH4ExitRSILevel = 70.0;
+input double ShortH4ExitRSILevel = 30.0;
+input bool UseShortInvalidationExit = false;
+input double ShortInvalidationRSILevel = 50.0;
+input double ShortInvalidationMaxR = 0.25;
 input bool AllowLong = true;
 input bool AllowShort = true;
 
@@ -138,6 +202,8 @@ struct TFState
    double atr1;
    bool crossRSIUpEMA;
    bool crossRSIDownEMA;
+   bool crossRSIUpWMA;
+   bool crossRSIDownWMA;
    bool crossEMAUpWMA;
    bool crossEMADownWMA;
    bool extremeLowRecent;
@@ -169,6 +235,19 @@ struct PyramidLeg
    ENUM_ORDER_TYPE type;
 };
 
+struct FanTracker
+{
+   FanPhaseType phase;
+   int ageBars;
+   int barsSinceEntry1;
+   double firstSwing;
+   double retestSwing;
+   double entry1RSI;
+   double maxSpan;
+   FanEntryPointType pendingSignal;
+   bool consumed;
+};
+
 ENUM_TIMEFRAMES DataTFs[4] = { PERIOD_D1, PERIOD_H4, PERIOD_H1, PERIOD_M15 };
 int rsiHandles[4];
 int atrHandles[4];
@@ -194,6 +273,10 @@ double pyramidPeakEquity = 0.0;
 
 int armedLongBars = 0;
 int armedShortBars = 0;
+int longFanOriginRSIWmaAge = 100000;
+int shortFanOriginRSIWmaAge = 100000;
+FanTracker longFan;
+FanTracker shortFan;
 
 int diagArmedLong = 0;
 int diagArmedShort = 0;
@@ -206,11 +289,45 @@ int diagRejectEMASide = 0;
 int diagRejectVolume = 0;
 int diagRejectLongQuality = 0;
 int diagRejectShortQuality = 0;
+int diagRejectRegimeLong = 0;
+int diagRejectRegimeShort = 0;
+int diagRejectFan = 0;
+int diagFanLongOrigins = 0;
+int diagFanShortOrigins = 0;
+int diagFanExpired = 0;
+int diagFanInvalid = 0;
+int diagFanLongE1Signals = 0;
+int diagFanLongE2Signals = 0;
+int diagFanLongE3Signals = 0;
+int diagFanShortE1Signals = 0;
+int diagFanShortE2Signals = 0;
+int diagFanShortE3Signals = 0;
+int diagFanLongE1Opened = 0;
+int diagFanLongE2Opened = 0;
+int diagFanLongE3Opened = 0;
+int diagFanShortE1Opened = 0;
+int diagFanShortE2Opened = 0;
+int diagFanShortE3Opened = 0;
 int diagTrailExit = 0;
+int diagLongTP1 = 0;
+int diagShortTP1 = 0;
+int diagLongTP2 = 0;
+int diagShortTP2 = 0;
+int diagLongH4Exit = 0;
+int diagShortH4Exit = 0;
+int diagShortInvalidationExit = 0;
+int diagLongTrailUpdates = 0;
+int diagShortTrailUpdates = 0;
 int diagEntryBars = 0;
 int diagTradesOpened = 0;
 int diagLongOpened = 0;
 int diagShortOpened = 0;
+int diagRegimeLongOpenBull = 0;
+int diagRegimeLongOpenNeutral = 0;
+int diagRegimeLongOpenBear = 0;
+int diagRegimeShortOpenBull = 0;
+int diagRegimeShortOpenNeutral = 0;
+int diagRegimeShortOpenBear = 0;
 int diagPyramidCycles = 0;
 int diagPyramidAdd1Opened = 0;
 int diagPyramidAdd2Opened = 0;
@@ -301,9 +418,29 @@ int OnInit()
    }
 
    if(LongEntryRSIMax < 0.0 || LongEntryRSIMax > 100.0 || LongH4RSIMin < 0.0 || LongH4RSIMin > 100.0 ||
-      ShortEntryRSIMin < 0.0 || ShortEntryRSIMin > 100.0 || ShortH4RSIMax < 0.0 || ShortH4RSIMax > 100.0)
+      ShortEntryRSIMin < 0.0 || ShortEntryRSIMin > 100.0 || ShortH4RSIMax < 0.0 || ShortH4RSIMax > 100.0 ||
+      LongTP2RSILevel < 0.0 || LongTP2RSILevel > 100.0 || ShortTP2RSILevel < 0.0 || ShortTP2RSILevel > 100.0 ||
+      LongH4ExitRSILevel < 0.0 || LongH4ExitRSILevel > 100.0 || ShortH4ExitRSILevel < 0.0 || ShortH4ExitRSILevel > 100.0 ||
+      ShortInvalidationRSILevel < 0.0 || ShortInvalidationRSILevel > 100.0)
    {
       Print("Quality RSI thresholds must be between 0 and 100.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   if(LongTP1_R <= 0.0 || ShortTP1_R <= 0.0 ||
+      LongBreakEvenTriggerR <= 0.0 || ShortBreakEvenTriggerR <= 0.0 ||
+      LongStartTrailingAfterR < 0.0 || ShortStartTrailingAfterR < 0.0 ||
+      LongTrailATRMultiplier <= 0.0 || ShortTrailATRMultiplier <= 0.0 ||
+      ShortInvalidationMaxR < 0.0)
+   {
+      Print("Directional exit R and ATR parameters are invalid.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   if(FanOriginCrossWindowBars < 1 || FanOriginMaxSpread <= 0.0 || FanMinExpansion < 0.0 ||
+      FanMinHigherLowRSI < 0.0 || FanMaxAgeBars < 3 || FanEntry2MinBarsAfterEntry1 < 1)
+   {
+      Print("RSI fan structure parameters are invalid.");
       return INIT_PARAMETERS_INCORRECT;
    }
 
@@ -315,7 +452,9 @@ int OnInit()
          FileWrite(diagCsvHandle, "time", "entry_tf", "entry_mode", "bias_mode", "armed_long", "armed_short",
                    "bias_bull", "bias_bear", "reject_bias", "reject_chop",
                    "reject_risk", "reject_curl", "reject_cross", "reject_ema_side",
-                   "reject_volume", "reject_long_quality", "reject_short_quality", "pyramid_adds", "pyramid_skip_locked", "pyramid_skip_minlot",
+                   "reject_volume", "reject_long_quality", "reject_short_quality", "regime_gate", "d1_regime_score",
+                   "h4_regime_score", "composite_regime_score", "reject_regime_long", "reject_regime_short",
+                   "pyramid_adds", "pyramid_skip_locked", "pyramid_skip_minlot",
                    "pyramid_skip_spread", "pyramid_skip_margin", "entry_state", "snapshot");
       }
       else
@@ -362,17 +501,31 @@ void OnTick()
       return;
    lastEntryBarTime = barTime;
 
+   TFState fanEntry;
+   ZeroMemory(fanEntry);
+   bool fanStateReady = false;
+   if(EntryMode == RSI_FAN_STRUCTURE)
+   {
+      if(!BuildState(EntryTF, fanEntry))
+         return;
+      UpdateFanStates(fanEntry);
+      fanStateReady = true;
+   }
+
    if(HasOpenPosition())
       return;
 
    TFState d1, h4, h1, m15, entry;
    if(!BuildState(PERIOD_D1, d1) || !BuildState(PERIOD_H4, h4) || !BuildState(PERIOD_H1, h1) || !BuildState(PERIOD_M15, m15))
       return;
-   if(!BuildState(EntryTF, entry))
+   if(fanStateReady)
+      entry = fanEntry;
+   else if(!BuildState(EntryTF, entry))
       return;
 
    diagEntryBars++;
-   UpdateArmedState(entry);
+   if(EntryMode != RSI_FAN_STRUCTURE)
+      UpdateArmedState(entry);
 
    int bullCount = 0;
    int bearCount = 0;
@@ -382,11 +535,18 @@ void OnTick()
 
    bool longBias = BiasAllowsLong(d1, h4, h1, bullCount);
    bool shortBias = BiasAllowsShort(d1, h4, h1, bearCount);
+   bool longRegime = RegimeAllowsLong(d1, h4);
+   bool shortRegime = RegimeAllowsShort(d1, h4);
 
    string reject = "";
-   if(AllowLong && LongSignal(entry, d1, h4, h1, longBias, reject))
+   if(AllowLong && LongSignal(entry, d1, h4, h1, longBias, longRegime, reject))
    {
-      OpenTrade(ORDER_TYPE_BUY, entry, d1, h4, h1, m15);
+      FanEntryPointType point = (EntryMode == RSI_FAN_STRUCTURE) ? FanSignal(true) : FAN_ENTRY_NONE;
+      if(point != FAN_ENTRY_NONE)
+         ConsumeFanSignal(true);
+      OpenTrade(ORDER_TYPE_BUY, entry, d1, h4, h1, m15, point);
+      if(EntryMode == RSI_FAN_STRUCTURE)
+         return;
       if(HasOpenPosition())
          return;
    }
@@ -394,8 +554,13 @@ void OnTick()
       TrackReject(reject);
 
    reject = "";
-   if(AllowShort && ShortSignal(entry, d1, h4, h1, shortBias, reject))
-      OpenTrade(ORDER_TYPE_SELL, entry, d1, h4, h1, m15);
+   if(AllowShort && ShortSignal(entry, d1, h4, h1, shortBias, shortRegime, reject))
+   {
+      FanEntryPointType point = (EntryMode == RSI_FAN_STRUCTURE) ? FanSignal(false) : FAN_ENTRY_NONE;
+      if(point != FAN_ENTRY_NONE)
+         ConsumeFanSignal(false);
+      OpenTrade(ORDER_TYPE_SELL, entry, d1, h4, h1, m15, point);
+   }
    else if(AllowShort && ShortSetupActive(entry))
       TrackReject(reject);
 
@@ -433,6 +598,8 @@ bool BuildState(ENUM_TIMEFRAMES tf, TFState &s)
    s.atr1 = atr[1];
    s.crossRSIUpEMA = (s.rsi2 <= s.ema2 && s.rsi1 > s.ema1);
    s.crossRSIDownEMA = (s.rsi2 >= s.ema2 && s.rsi1 < s.ema1);
+   s.crossRSIUpWMA = (s.rsi2 <= s.wma2 && s.rsi1 > s.wma1);
+   s.crossRSIDownWMA = (s.rsi2 >= s.wma2 && s.rsi1 < s.wma1);
    s.crossEMAUpWMA = (s.ema2 <= s.wma2 && s.ema1 > s.wma1);
    s.crossEMADownWMA = (s.ema2 >= s.wma2 && s.ema1 < s.wma1);
    s.extremeLowRecent = RecentRSIExtreme(rsi, 1, LookbackExtremeBars, LongArmLevel, true);
@@ -503,6 +670,279 @@ void UpdateArmedState(const TFState &entry)
       diagArmedShort++;
 }
 
+double FanSpan(const TFState &entry)
+{
+   double high = MathMax(entry.rsi1, MathMax(entry.ema1, entry.wma1));
+   double low = MathMin(entry.rsi1, MathMin(entry.ema1, entry.wma1));
+   return high - low;
+}
+
+void ResetFanTracker(FanTracker &tracker)
+{
+   tracker.phase = FAN_IDLE;
+   tracker.ageBars = 0;
+   tracker.barsSinceEntry1 = 0;
+   tracker.firstSwing = 0.0;
+   tracker.retestSwing = 0.0;
+   tracker.entry1RSI = 0.0;
+   tracker.maxSpan = 0.0;
+   tracker.pendingSignal = FAN_ENTRY_NONE;
+   tracker.consumed = false;
+}
+
+void StartFanTracker(FanTracker &tracker, bool longSide, const TFState &entry)
+{
+   ResetFanTracker(tracker);
+   tracker.phase = FAN_WAIT_FIRST_CROSS;
+   tracker.firstSwing = entry.rsi1;
+   tracker.retestSwing = entry.rsi1;
+   tracker.maxSpan = FanSpan(entry);
+
+   if(longSide)
+      diagFanLongOrigins++;
+   else
+      diagFanShortOrigins++;
+}
+
+void RegisterFanSignal(bool longSide, FanEntryPointType point)
+{
+   if(point == FAN_ENTRY1)
+   {
+      if(longSide)
+         diagFanLongE1Signals++;
+      else
+         diagFanShortE1Signals++;
+   }
+   else if(point == FAN_ENTRY2)
+   {
+      if(longSide)
+         diagFanLongE2Signals++;
+      else
+         diagFanShortE2Signals++;
+   }
+   else if(point == FAN_ENTRY3)
+   {
+      if(longSide)
+         diagFanLongE3Signals++;
+      else
+         diagFanShortE3Signals++;
+   }
+
+}
+
+void EmitFanSignal(FanTracker &tracker, bool longSide, FanEntryPointType point)
+{
+   tracker.pendingSignal = point;
+   RegisterFanSignal(longSide, point);
+}
+
+void AdvanceFanTracker(FanTracker &tracker, bool longSide, const TFState &entry)
+{
+   tracker.pendingSignal = FAN_ENTRY_NONE;
+   if(tracker.phase == FAN_IDLE || tracker.phase == FAN_COMPLETE)
+      return;
+
+   tracker.ageBars++;
+   if(tracker.ageBars > FanMaxAgeBars)
+   {
+      diagFanExpired++;
+      ResetFanTracker(tracker);
+      return;
+   }
+
+   tracker.maxSpan = MathMax(tracker.maxSpan, FanSpan(entry));
+   if(tracker.consumed)
+      return;
+
+   bool crossEMA = longSide ? entry.crossRSIUpEMA : entry.crossRSIDownEMA;
+   bool crossWMA = longSide ? entry.crossRSIUpWMA : entry.crossRSIDownWMA;
+   bool movedBackAcrossEMA = longSide ? (entry.crossRSIDownEMA || entry.rsi1 <= entry.ema1)
+                                       : (entry.crossRSIUpEMA || entry.rsi1 >= entry.ema1);
+   bool expansionReady = (tracker.maxSpan >= FanMinExpansion);
+
+   if(tracker.phase == FAN_WAIT_FIRST_CROSS)
+   {
+      if(longSide)
+         tracker.firstSwing = MathMin(tracker.firstSwing, entry.rsi1);
+      else
+         tracker.firstSwing = MathMax(tracker.firstSwing, entry.rsi1);
+
+      if(!expansionReady)
+         return;
+
+      if(FanAllowDirectWMAEntry && crossWMA)
+      {
+         EmitFanSignal(tracker, longSide, FAN_ENTRY3);
+         tracker.phase = FAN_COMPLETE;
+         return;
+      }
+
+      if(crossEMA)
+      {
+         tracker.phase = FAN_WAIT_RETEST;
+         tracker.retestSwing = entry.rsi1;
+      }
+      return;
+   }
+
+   if(tracker.phase == FAN_WAIT_RETEST)
+   {
+      if(FanAllowDirectWMAEntry && crossWMA)
+      {
+         EmitFanSignal(tracker, longSide, FAN_ENTRY3);
+         tracker.phase = FAN_COMPLETE;
+         return;
+      }
+
+      if(movedBackAcrossEMA)
+      {
+         tracker.phase = FAN_WAIT_CONFIRM;
+         tracker.retestSwing = entry.rsi1;
+      }
+      return;
+   }
+
+   if(tracker.phase == FAN_WAIT_CONFIRM)
+   {
+      if(longSide && entry.rsi1 <= entry.ema1)
+         tracker.retestSwing = MathMin(tracker.retestSwing, entry.rsi1);
+      else if(!longSide && entry.rsi1 >= entry.ema1)
+         tracker.retestSwing = MathMax(tracker.retestSwing, entry.rsi1);
+
+      if(FanAllowDirectWMAEntry && crossWMA)
+      {
+         EmitFanSignal(tracker, longSide, FAN_ENTRY3);
+         tracker.phase = FAN_COMPLETE;
+         return;
+      }
+
+      if(crossEMA)
+      {
+         bool higherLow = longSide ? (tracker.retestSwing >= tracker.firstSwing + FanMinHigherLowRSI)
+                                   : (tracker.retestSwing <= tracker.firstSwing - FanMinHigherLowRSI);
+         if(!higherLow)
+         {
+            diagFanInvalid++;
+            ResetFanTracker(tracker);
+            return;
+         }
+
+         tracker.entry1RSI = entry.rsi1;
+         tracker.barsSinceEntry1 = 0;
+         tracker.phase = FAN_WAIT_ENTRY2;
+         EmitFanSignal(tracker, longSide, FAN_ENTRY1);
+      }
+      return;
+   }
+
+   if(tracker.phase == FAN_WAIT_ENTRY2)
+   {
+      tracker.barsSinceEntry1++;
+      if(crossWMA)
+      {
+         EmitFanSignal(tracker, longSide, FAN_ENTRY3);
+         tracker.phase = FAN_COMPLETE;
+         return;
+      }
+
+      bool betweenAverages = longSide ? (entry.rsi1 > entry.ema1 && entry.rsi1 <= entry.wma1)
+                                      : (entry.rsi1 < entry.ema1 && entry.rsi1 >= entry.wma1);
+      bool passedEntry1 = longSide ? (entry.rsi1 > tracker.entry1RSI) : (entry.rsi1 < tracker.entry1RSI);
+      if(tracker.barsSinceEntry1 >= FanEntry2MinBarsAfterEntry1 && betweenAverages && passedEntry1)
+      {
+         EmitFanSignal(tracker, longSide, FAN_ENTRY2);
+         tracker.phase = FAN_WAIT_ENTRY3;
+      }
+      return;
+   }
+
+   if(tracker.phase == FAN_WAIT_ENTRY3 && crossWMA)
+   {
+      EmitFanSignal(tracker, longSide, FAN_ENTRY3);
+      tracker.phase = FAN_COMPLETE;
+   }
+}
+
+void UpdateFanStates(const TFState &entry)
+{
+   if(EntryMode != RSI_FAN_STRUCTURE)
+      return;
+
+   if(entry.crossRSIDownWMA)
+      longFanOriginRSIWmaAge = 0;
+   else if(longFanOriginRSIWmaAge < 100000)
+      longFanOriginRSIWmaAge++;
+
+   if(entry.crossRSIUpWMA)
+      shortFanOriginRSIWmaAge = 0;
+   else if(shortFanOriginRSIWmaAge < 100000)
+      shortFanOriginRSIWmaAge++;
+
+   bool longOrigin = (entry.crossEMADownWMA && longFanOriginRSIWmaAge >= 1 &&
+                      longFanOriginRSIWmaAge <= FanOriginCrossWindowBars && FanSpan(entry) <= FanOriginMaxSpread);
+   bool shortOrigin = (entry.crossEMAUpWMA && shortFanOriginRSIWmaAge >= 1 &&
+                       shortFanOriginRSIWmaAge <= FanOriginCrossWindowBars && FanSpan(entry) <= FanOriginMaxSpread);
+
+   if(longOrigin)
+      StartFanTracker(longFan, true, entry);
+   else
+      AdvanceFanTracker(longFan, true, entry);
+
+   if(shortOrigin)
+      StartFanTracker(shortFan, false, entry);
+   else
+      AdvanceFanTracker(shortFan, false, entry);
+}
+
+bool FanTrackerIsActive(const FanTracker &tracker)
+{
+   return (!tracker.consumed && (tracker.pendingSignal != FAN_ENTRY_NONE ||
+           (tracker.phase != FAN_IDLE && tracker.phase != FAN_COMPLETE)));
+}
+
+FanEntryPointType FanSignal(bool longSide)
+{
+   if(longSide)
+   {
+      if(longFan.consumed)
+         return FAN_ENTRY_NONE;
+      return longFan.pendingSignal;
+   }
+
+   if(shortFan.consumed)
+      return FAN_ENTRY_NONE;
+   return shortFan.pendingSignal;
+}
+
+bool FanSelectionAllows(FanEntryPointType point)
+{
+   if(point == FAN_ENTRY_NONE)
+      return false;
+   if(FanEntrySelection == FAN_FIRST_VALID)
+      return true;
+   if(FanEntrySelection == FAN_ENTRY1_ONLY)
+      return (point == FAN_ENTRY1);
+   if(FanEntrySelection == FAN_ENTRY2_ONLY)
+      return (point == FAN_ENTRY2);
+   return (point == FAN_ENTRY3);
+}
+
+void ConsumeFanSignal(bool longSide)
+{
+   if(longSide)
+   {
+      longFan.consumed = true;
+      longFan.pendingSignal = FAN_ENTRY_NONE;
+      longFan.phase = FAN_COMPLETE;
+   }
+   else
+   {
+      shortFan.consumed = true;
+      shortFan.pendingSignal = FAN_ENTRY_NONE;
+      shortFan.phase = FAN_COMPLETE;
+   }
+}
+
 BiasState GetBias(const TFState &s)
 {
    bool rsiBull = (s.rsi1 > s.ema1 && s.ema1 >= s.wma1 && s.wma1 >= s.wma2);
@@ -569,6 +1009,90 @@ bool BiasAllowsShort(const TFState &d1, const TFState &h4, const TFState &h1, in
    return (d1.bias != BIAS_BULL && h4.bias != BIAS_BULL && (h4.bias == BIAS_BEAR || h1.bias == BIAS_BEAR));
 }
 
+int SignedComparison(double left, double right)
+{
+   if(left > right)
+      return 1;
+   if(left < right)
+      return -1;
+   return 0;
+}
+
+int RegimeScore(const TFState &state)
+{
+   int score = 0;
+   score += SignedComparison(state.rsi1, state.wma1);
+   score += SignedComparison(state.ema1, state.wma1);
+   score += SignedComparison(state.ema1, state.ema2);
+   score += SignedComparison(state.wma1, state.wma2);
+   return score;
+}
+
+int CompositeRegimeScore(const TFState &d1, const TFState &h4)
+{
+   return 2 * RegimeScore(d1) + RegimeScore(h4);
+}
+
+BiasState RegimeBucket(const TFState &d1, const TFState &h4)
+{
+   int score = CompositeRegimeScore(d1, h4);
+   if(score >= 4)
+      return BIAS_BULL;
+   if(score <= -4)
+      return BIAS_BEAR;
+   return BIAS_NEUTRAL;
+}
+
+string RegimeBucketCode(const TFState &d1, const TFState &h4)
+{
+   BiasState bucket = RegimeBucket(d1, h4);
+   if(bucket == BIAS_BULL)
+      return "B";
+   if(bucket == BIAS_BEAR)
+      return "S";
+   return "N";
+}
+
+bool RegimeAllowsLong(const TFState &d1, const TFState &h4)
+{
+   if(RegimeGateMode == REGIME_GATE_OFF)
+      return true;
+   if(RegimeGateMode == REGIME_D1_EARLY_VETO)
+      return (RegimeScore(d1) > -2);
+   return (CompositeRegimeScore(d1, h4) > -4);
+}
+
+bool RegimeAllowsShort(const TFState &d1, const TFState &h4)
+{
+   if(RegimeGateMode == REGIME_GATE_OFF)
+      return true;
+   if(RegimeGateMode == REGIME_D1_EARLY_VETO)
+      return (RegimeScore(d1) < 2);
+   return (CompositeRegimeScore(d1, h4) < 4);
+}
+
+void TrackRegimeOpened(bool longSide, const TFState &d1, const TFState &h4)
+{
+   BiasState bucket = RegimeBucket(d1, h4);
+   if(longSide)
+   {
+      if(bucket == BIAS_BULL)
+         diagRegimeLongOpenBull++;
+      else if(bucket == BIAS_BEAR)
+         diagRegimeLongOpenBear++;
+      else
+         diagRegimeLongOpenNeutral++;
+      return;
+   }
+
+   if(bucket == BIAS_BULL)
+      diagRegimeShortOpenBull++;
+   else if(bucket == BIAS_BEAR)
+      diagRegimeShortOpenBear++;
+   else
+      diagRegimeShortOpenNeutral++;
+}
+
 bool LongQualityAllows(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1)
 {
    if(!UseLongQualityFilter)
@@ -605,6 +1129,8 @@ bool ShortQualityAllows(const TFState &entry, const TFState &d1, const TFState &
 
 bool LongSetupActive(const TFState &entry)
 {
+   if(EntryMode == RSI_FAN_STRUCTURE)
+      return FanTrackerIsActive(longFan);
    if(EntryMode == RSI_PULLBACK_CONTINUATION)
       return (armedLongBars > 0 || entry.pullbackLongRecent);
    return (armedLongBars > 0);
@@ -612,12 +1138,15 @@ bool LongSetupActive(const TFState &entry)
 
 bool ShortSetupActive(const TFState &entry)
 {
+   if(EntryMode == RSI_FAN_STRUCTURE)
+      return FanTrackerIsActive(shortFan);
    if(EntryMode == RSI_PULLBACK_CONTINUATION)
       return (armedShortBars > 0 || entry.pullbackShortRecent);
    return (armedShortBars > 0);
 }
 
-bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, bool biasOK, string &reject)
+bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1,
+                bool biasOK, bool regimeOK, string &reject)
 {
    if(!LongSetupActive(entry))
    {
@@ -627,6 +1156,11 @@ bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, cons
    if(!biasOK)
    {
       reject = "bias";
+      return false;
+   }
+   if(!regimeOK)
+   {
+      reject = "regime_long";
       return false;
    }
    if(!LongQualityAllows(entry, d1, h4, h1))
@@ -684,6 +1218,18 @@ bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, cons
       return false;
    }
 
+   if(EntryMode == RSI_FAN_STRUCTURE)
+   {
+      if(FanSelectionAllows(FanSignal(true)))
+      {
+         reject = "";
+         return true;
+      }
+
+      reject = "fan";
+      return false;
+   }
+
    if(entry.rsi1 > entry.ema1)
    {
       reject = "";
@@ -694,7 +1240,8 @@ bool LongSignal(const TFState &entry, const TFState &d1, const TFState &h4, cons
    return false;
 }
 
-bool ShortSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, bool biasOK, string &reject)
+bool ShortSignal(const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1,
+                 bool biasOK, bool regimeOK, string &reject)
 {
    if(!ShortSetupActive(entry))
    {
@@ -704,6 +1251,11 @@ bool ShortSignal(const TFState &entry, const TFState &d1, const TFState &h4, con
    if(!biasOK)
    {
       reject = "bias";
+      return false;
+   }
+   if(!regimeOK)
+   {
+      reject = "regime_short";
       return false;
    }
    if(!ShortQualityAllows(entry, d1, h4, h1))
@@ -758,6 +1310,18 @@ bool ShortSignal(const TFState &entry, const TFState &d1, const TFState &h4, con
       }
 
       reject = "ema_side";
+      return false;
+   }
+
+   if(EntryMode == RSI_FAN_STRUCTURE)
+   {
+      if(FanSelectionAllows(FanSignal(false)))
+      {
+         reject = "";
+         return true;
+      }
+
+      reject = "fan";
       return false;
    }
 
@@ -881,7 +1445,8 @@ bool HasOpenPosition()
    return SelectManagedPosition();
 }
 
-void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, const TFState &m15)
+void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, const TFState &h4, const TFState &h1, const TFState &m15,
+               FanEntryPointType fanEntryPoint = FAN_ENTRY_NONE)
 {
    double price = (type == ORDER_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double sl = InitialSL(type);
@@ -914,6 +1479,10 @@ void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, co
    }
 
    string comment = (type == ORDER_TYPE_BUY) ? "RSI_MTF_LONG" : "RSI_MTF_SHORT";
+   if(fanEntryPoint != FAN_ENTRY_NONE)
+      comment += "_FAN_" + FanPointText(fanEntryPoint);
+   if(RegimeGateMode != REGIME_GATE_OFF)
+      comment += "_RG_" + RegimeBucketCode(d1, h4);
    bool ok = false;
    if(type == ORDER_TYPE_BUY)
       ok = trade.Buy(rp.lots, _Symbol, price, sl, tp, comment);
@@ -949,6 +1518,9 @@ void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, co
          diagLongOpened++;
       else
          diagShortOpened++;
+      TrackRegimeOpened(type == ORDER_TYPE_BUY, d1, h4);
+      if(fanEntryPoint != FAN_ENTRY_NONE)
+         TrackFanOpened(type == ORDER_TYPE_BUY, fanEntryPoint);
       Print(comment, " opened lots=", DoubleToString(rp.lots, 2),
             " desiredRisk=", DoubleToString(rp.desiredRiskMoney, 2),
             " actualRisk=", DoubleToString(rp.actualRiskMoney, 2),
@@ -1103,6 +1675,90 @@ bool BuildRiskPlanForMoney(double riskDistance, double desiredRiskMoney, RiskPla
    return true;
 }
 
+double TP1RFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return TP1_R;
+   return (positionType == POSITION_TYPE_BUY) ? LongTP1_R : ShortTP1_R;
+}
+
+double BreakEvenTriggerFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return BreakEvenTriggerR;
+   return (positionType == POSITION_TYPE_BUY) ? LongBreakEvenTriggerR : ShortBreakEvenTriggerR;
+}
+
+double StartTrailingAfterFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return StartTrailingAfterR;
+   return (positionType == POSITION_TYPE_BUY) ? LongStartTrailingAfterR : ShortStartTrailingAfterR;
+}
+
+double TrailATRMultiplierFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return TrailATRMultiplier;
+   return (positionType == POSITION_TYPE_BUY) ? LongTrailATRMultiplier : ShortTrailATRMultiplier;
+}
+
+double TP2RSILevelFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return (positionType == POSITION_TYPE_BUY) ? 65.0 : 35.0;
+   return (positionType == POSITION_TYPE_BUY) ? LongTP2RSILevel : ShortTP2RSILevel;
+}
+
+double H4ExitRSILevelFor(long positionType)
+{
+   if(!UseDirectionalExitProfile)
+      return (positionType == POSITION_TYPE_BUY) ? Overbought : Oversold;
+   return (positionType == POSITION_TYPE_BUY) ? LongH4ExitRSILevel : ShortH4ExitRSILevel;
+}
+
+void TrackTP1Exit(long positionType)
+{
+   if(positionType == POSITION_TYPE_BUY)
+      diagLongTP1++;
+   else
+      diagShortTP1++;
+}
+
+void TrackTP2Exit(long positionType)
+{
+   if(positionType == POSITION_TYPE_BUY)
+      diagLongTP2++;
+   else
+      diagShortTP2++;
+}
+
+void TrackH4Exit(long positionType)
+{
+   if(positionType == POSITION_TYPE_BUY)
+      diagLongH4Exit++;
+   else
+      diagShortH4Exit++;
+}
+
+void TrackTrailUpdate(long positionType)
+{
+   diagTrailExit++;
+   if(positionType == POSITION_TYPE_BUY)
+      diagLongTrailUpdates++;
+   else
+      diagShortTrailUpdates++;
+}
+
+bool ShortInvalidationAllowsExit(long positionType, bool tp1Completed, double rMultiple, const TFState &entryState)
+{
+   if(!UseShortInvalidationExit || positionType != POSITION_TYPE_SELL || tp1Completed)
+      return false;
+   if(rMultiple > ShortInvalidationMaxR)
+      return false;
+   return (entryState.crossRSIUpEMA && entryState.rsi1 > ShortInvalidationRSILevel);
+}
+
 void ManageHedgingPyramidGroup()
 {
    if(CountManagedPositions() <= 0)
@@ -1157,18 +1813,19 @@ void ManageHedgingPyramidGroup()
    double profitDistance = (positionType == POSITION_TYPE_BUY) ? current - referenceEntry : referenceEntry - current;
    double rMultiple = profitDistance / initialRisk;
 
-   if(rMultiple >= BreakEvenTriggerR)
+   if(rMultiple >= BreakEvenTriggerFor(positionType))
    {
       MoveSLToBreakEven(positionType, referenceEntry, currentSL, tp);
       GetPyramidCurrentStopAndTP(positionType, currentSL, tp);
    }
 
-   if(UsePartialExits && !pyramidHasAdds && !tp1Done && rMultiple >= TP1_R)
+   if(UsePartialExits && !pyramidHasAdds && !tp1Done && rMultiple >= TP1RFor(positionType))
    {
       double activeVolume = PositionGetDouble(POSITION_VOLUME);
       if(ClosePartialByTicket(activeTicket, activeVolume, TP1ClosePct, "TP1"))
       {
          tp1Done = true;
+         TrackTP1Exit(positionType);
          if(GetPyramidCurrentStopAndTP(positionType, currentSL, tp))
             MoveSLToBreakEven(positionType, referenceEntry, currentSL, tp);
       }
@@ -1178,34 +1835,47 @@ void ManageHedgingPyramidGroup()
    if(!BuildState(EntryTF, entryState) || !BuildState(PERIOD_H1, h1) || !BuildState(PERIOD_H4, h4))
       return;
 
-   if(TrailMode != TRAIL_OFF && rMultiple >= StartTrailingAfterR)
+   if(ShortInvalidationAllowsExit(positionType, tp1Done, rMultiple, entryState))
+   {
+      if(ClosePyramidGroup())
+         diagShortInvalidationExit++;
+      return;
+   }
+
+   if(TrailMode != TRAIL_OFF && rMultiple >= StartTrailingAfterFor(positionType))
    {
       if(GetPyramidCurrentStopAndTP(positionType, currentSL, tp))
          ApplyTrailingStop(positionType, currentSL, tp, entryState);
    }
 
-   bool entryExitLong = (entryState.rsi2 >= 65.0 && entryState.rsi1 < entryState.rsi2 && entryState.crossRSIDownEMA);
-   bool h1ExitLong = (h1.rsi2 >= 65.0 && h1.rsi1 < h1.rsi2 && h1.crossRSIDownEMA);
-   bool entryExitShort = (entryState.rsi2 <= 35.0 && entryState.rsi1 > entryState.rsi2 && entryState.crossRSIUpEMA);
-   bool h1ExitShort = (h1.rsi2 <= 35.0 && h1.rsi1 > h1.rsi2 && h1.crossRSIUpEMA);
+   double tp2Level = TP2RSILevelFor(positionType);
+   bool entryExitLong = (entryState.rsi2 >= tp2Level && entryState.rsi1 < entryState.rsi2 && entryState.crossRSIDownEMA);
+   bool h1ExitLong = (h1.rsi2 >= tp2Level && h1.rsi1 < h1.rsi2 && h1.crossRSIDownEMA);
+   bool entryExitShort = (entryState.rsi2 <= tp2Level && entryState.rsi1 > entryState.rsi2 && entryState.crossRSIUpEMA);
+   bool h1ExitShort = (h1.rsi2 <= tp2Level && h1.rsi1 > h1.rsi2 && h1.crossRSIUpEMA);
 
    if(UsePartialExits && !pyramidHasAdds && tp1Done && !tp2Done)
    {
       bool tp2Signal = (positionType == POSITION_TYPE_BUY) ? (entryExitLong || h1ExitLong) : (entryExitShort || h1ExitShort);
       if(tp2Signal && PositionSelectByTicket(activeTicket) &&
          ClosePartialByTicket(activeTicket, PositionGetDouble(POSITION_VOLUME), TP2ClosePct, "TP2_RSI"))
+      {
          tp2Done = true;
+         TrackTP2Exit(positionType);
+      }
    }
 
    bool h4Exit = false;
+   double h4ExitLevel = H4ExitRSILevelFor(positionType);
    if(positionType == POSITION_TYPE_BUY)
-      h4Exit = (h4.rsi2 > Overbought && h4.rsi1 < h4.rsi2 && h4.crossRSIDownEMA);
+      h4Exit = (h4.rsi2 > h4ExitLevel && h4.rsi1 < h4.rsi2 && h4.crossRSIDownEMA);
    else
-      h4Exit = (h4.rsi2 < Oversold && h4.rsi1 > h4.rsi2 && h4.crossRSIUpEMA);
+      h4Exit = (h4.rsi2 < h4ExitLevel && h4.rsi1 > h4.rsi2 && h4.crossRSIUpEMA);
 
    if(h4Exit)
    {
-      ClosePyramidGroup();
+      if(ClosePyramidGroup())
+         TrackH4Exit(positionType);
       return;
    }
 
@@ -1267,14 +1937,15 @@ void ManageOpenPosition()
    double profitDistance = (positionType == POSITION_TYPE_BUY) ? current - referenceEntry : referenceEntry - current;
    double rMultiple = profitDistance / initialRisk;
 
-   if(rMultiple >= BreakEvenTriggerR)
+   if(rMultiple >= BreakEvenTriggerFor(positionType))
       MoveSLToBreakEven(positionType, referenceEntry, sl, tp);
 
-   if(UsePartialExits && !pyramidHasAdds && !tp1Done && rMultiple >= TP1_R)
+   if(UsePartialExits && !pyramidHasAdds && !tp1Done && rMultiple >= TP1RFor(positionType))
    {
       if(ClosePartial(volume, TP1ClosePct, "TP1"))
       {
          tp1Done = true;
+         TrackTP1Exit(positionType);
          MoveSLToBreakEven(positionType, referenceEntry, PositionGetDouble(POSITION_SL), PositionGetDouble(POSITION_TP));
       }
    }
@@ -1286,34 +1957,47 @@ void ManageOpenPosition()
    if(!BuildState(EntryTF, entryState) || !BuildState(PERIOD_H1, h1) || !BuildState(PERIOD_H4, h4))
       return;
 
-   if(TrailMode != TRAIL_OFF && rMultiple >= StartTrailingAfterR)
+   if(ShortInvalidationAllowsExit(positionType, tp1Done, rMultiple, entryState))
+   {
+      if(trade.PositionClose(_Symbol))
+         diagShortInvalidationExit++;
+      return;
+   }
+
+   if(TrailMode != TRAIL_OFF && rMultiple >= StartTrailingAfterFor(positionType))
       ApplyTrailingStop(positionType, sl, tp, entryState);
 
-   bool entryExitLong = (entryState.rsi2 >= 65.0 && entryState.rsi1 < entryState.rsi2 && entryState.crossRSIDownEMA);
-   bool h1ExitLong = (h1.rsi2 >= 65.0 && h1.rsi1 < h1.rsi2 && h1.crossRSIDownEMA);
-   bool entryExitShort = (entryState.rsi2 <= 35.0 && entryState.rsi1 > entryState.rsi2 && entryState.crossRSIUpEMA);
-   bool h1ExitShort = (h1.rsi2 <= 35.0 && h1.rsi1 > h1.rsi2 && h1.crossRSIUpEMA);
+   double tp2Level = TP2RSILevelFor(positionType);
+   bool entryExitLong = (entryState.rsi2 >= tp2Level && entryState.rsi1 < entryState.rsi2 && entryState.crossRSIDownEMA);
+   bool h1ExitLong = (h1.rsi2 >= tp2Level && h1.rsi1 < h1.rsi2 && h1.crossRSIDownEMA);
+   bool entryExitShort = (entryState.rsi2 <= tp2Level && entryState.rsi1 > entryState.rsi2 && entryState.crossRSIUpEMA);
+   bool h1ExitShort = (h1.rsi2 <= tp2Level && h1.rsi1 > h1.rsi2 && h1.crossRSIUpEMA);
 
    if(UsePartialExits && !pyramidHasAdds && tp1Done && !tp2Done)
    {
       bool tp2Signal = (positionType == POSITION_TYPE_BUY) ? (entryExitLong || h1ExitLong) : (entryExitShort || h1ExitShort);
       if(tp2Signal && ClosePartial(PositionGetDouble(POSITION_VOLUME), TP2ClosePct, "TP2_RSI"))
+      {
          tp2Done = true;
+         TrackTP2Exit(positionType);
+      }
    }
 
    bool h4Exit = false;
+   double h4ExitLevel = H4ExitRSILevelFor(positionType);
    if(positionType == POSITION_TYPE_BUY)
    {
-      h4Exit = (h4.rsi2 > Overbought && h4.rsi1 < h4.rsi2 && h4.crossRSIDownEMA);
+      h4Exit = (h4.rsi2 > h4ExitLevel && h4.rsi1 < h4.rsi2 && h4.crossRSIDownEMA);
    }
    else
    {
-      h4Exit = (h4.rsi2 < Oversold && h4.rsi1 > h4.rsi2 && h4.crossRSIUpEMA);
+      h4Exit = (h4.rsi2 < h4ExitLevel && h4.rsi1 > h4.rsi2 && h4.crossRSIUpEMA);
    }
 
    if(h4Exit)
    {
-      trade.PositionClose(_Symbol);
+      if(trade.PositionClose(_Symbol))
+         TrackH4Exit(positionType);
       return;
    }
 
@@ -1993,7 +2677,7 @@ void ApplyTrailingStop(long positionType, double currentSL, double tp, const TFS
    double trailSL = 0.0;
 
    if(TrailMode == ATR_CHANDELIER)
-      trailSL = ChandelierTrailSL(positionType, entryState.atr1);
+      trailSL = ChandelierTrailSL(positionType, entryState.atr1, TrailATRMultiplierFor(positionType));
 
    if(trailSL <= 0.0)
       return;
@@ -2017,12 +2701,12 @@ void ApplyTrailingStop(long positionType, double currentSL, double tp, const TFS
 
    if(modified)
    {
-      diagTrailExit++;
+      TrackTrailUpdate(positionType);
       Print("TRAIL update mode=", TrailModeText(), " sl=", DoubleToString(trailSL, _Digits));
    }
 }
 
-double ChandelierTrailSL(long positionType, double atr)
+double ChandelierTrailSL(long positionType, double atr, double atrMultiplier)
 {
    if(atr <= 0.0 || TrailLookbackBars < 2)
       return 0.0;
@@ -2037,13 +2721,13 @@ double ChandelierTrailSL(long positionType, double atr)
       double highest = rates[1].high;
       for(int i = 2; i <= TrailLookbackBars; i++)
          highest = MathMax(highest, rates[i].high);
-      return highest - atr * TrailATRMultiplier;
+      return highest - atr * atrMultiplier;
    }
 
    double lowest = rates[1].low;
    for(int i = 2; i <= TrailLookbackBars; i++)
       lowest = MathMin(lowest, rates[i].low);
-   return lowest + atr * TrailATRMultiplier;
+   return lowest + atr * atrMultiplier;
 }
 
 bool ClosePartial(double currentVolume, double pct, string label)
@@ -2124,6 +2808,15 @@ string BiasModeText()
    return "HTF_VETO";
 }
 
+string RegimeGateModeText()
+{
+   if(RegimeGateMode == REGIME_D1_EARLY_VETO)
+      return "D1_EARLY_VETO";
+   if(RegimeGateMode == REGIME_D1_H4_COMPOSITE_VETO)
+      return "D1_H4_COMPOSITE_VETO";
+   return "OFF";
+}
+
 string TrailModeText()
 {
    if(TrailMode == ATR_CHANDELIER)
@@ -2140,12 +2833,62 @@ string PyramidAccountModeText(PyramidAccountModeType mode)
    return "PYRAMID_AUTO";
 }
 
+string FanPointText(FanEntryPointType point)
+{
+   if(point == FAN_ENTRY1)
+      return "E1";
+   if(point == FAN_ENTRY2)
+      return "E2";
+   if(point == FAN_ENTRY3)
+      return "E3";
+   return "NONE";
+}
+
+string FanEntrySelectionText()
+{
+   if(FanEntrySelection == FAN_ENTRY1_ONLY)
+      return "ENTRY1_ONLY";
+   if(FanEntrySelection == FAN_ENTRY2_ONLY)
+      return "ENTRY2_ONLY";
+   if(FanEntrySelection == FAN_ENTRY3_ONLY)
+      return "ENTRY3_ONLY";
+   return "FIRST_VALID";
+}
+
+void TrackFanOpened(bool longSide, FanEntryPointType point)
+{
+   if(point == FAN_ENTRY1)
+   {
+      if(longSide)
+         diagFanLongE1Opened++;
+      else
+         diagFanShortE1Opened++;
+   }
+   else if(point == FAN_ENTRY2)
+   {
+      if(longSide)
+         diagFanLongE2Opened++;
+      else
+         diagFanShortE2Opened++;
+   }
+   else if(point == FAN_ENTRY3)
+   {
+      if(longSide)
+         diagFanLongE3Opened++;
+      else
+         diagFanShortE3Opened++;
+   }
+
+}
+
 string EntryModeText()
 {
    if(EntryMode == RSI_CROSS_EMA)
       return "RSI_CROSS_EMA";
    if(EntryMode == RSI_PULLBACK_CONTINUATION)
       return "RSI_PULLBACK_CONTINUATION";
+   if(EntryMode == RSI_FAN_STRUCTURE)
+      return "RSI_FAN_STRUCTURE";
    return "RSI_ABOVE_EMA_AFTER_EXTREME";
 }
 
@@ -2181,6 +2924,12 @@ void TrackReject(string reason)
       diagRejectLongQuality++;
    else if(reason == "short_quality")
       diagRejectShortQuality++;
+   else if(reason == "regime_long")
+      diagRejectRegimeLong++;
+   else if(reason == "regime_short")
+      diagRejectRegimeShort++;
+   else if(reason == "fan")
+      diagRejectFan++;
 }
 
 void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, const TFState &m15, const TFState &entry, int bullCount, int bearCount)
@@ -2198,7 +2947,9 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
       FileWrite(diagCsvHandle, TimeToString(lastEntryBarTime), TFName(EntryTF), entryModeText, biasModeText,
                 armedLongBars, armedShortBars, bullCount, bearCount, diagRejectBias,
                 diagRejectChop, diagRejectRisk, diagRejectCurl,
-                diagRejectCross, diagRejectEMASide, diagRejectVolume, diagRejectLongQuality, diagRejectShortQuality, pyramidAddCount,
+                diagRejectCross, diagRejectEMASide, diagRejectVolume, diagRejectLongQuality, diagRejectShortQuality,
+                RegimeGateModeText(), RegimeScore(d1), RegimeScore(h4), CompositeRegimeScore(d1, h4),
+                diagRejectRegimeLong, diagRejectRegimeShort, pyramidAddCount,
                 diagPyramidSkipLockedPnl, diagPyramidSkipMinLot, diagPyramidSkipSpread,
                 diagPyramidSkipMargin, StateText(entry), snapshot);
    }
@@ -2210,6 +2961,11 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
          " entryTF=", TFName(EntryTF),
          " mode=", entryModeText,
          " biasMode=", biasModeText,
+         " regimeGate=", RegimeGateModeText(),
+         " regimeScore[D1=", RegimeScore(d1),
+         ",H4=", RegimeScore(h4),
+         ",composite=", CompositeRegimeScore(d1, h4),
+         "]",
          " armedL=", armedLongBars,
          " armedS=", armedShortBars,
          " biasBull=", bullCount,
@@ -2223,6 +2979,9 @@ void PrintDiagnostics(const TFState &d1, const TFState &h4, const TFState &h1, c
          ",volume=", diagRejectVolume,
          ",longQuality=", diagRejectLongQuality,
          ",shortQuality=", diagRejectShortQuality,
+         ",regimeL=", diagRejectRegimeLong,
+         ",regimeS=", diagRejectRegimeShort,
+         ",fan=", diagRejectFan,
          "] entry=", StateText(entry),
          " snapshot=", snapshot);
 }
@@ -2250,8 +3009,29 @@ void PrintDiagnosticsSummary(string source)
    rejects += " volume=" + IntegerToString(diagRejectVolume);
    rejects += " longQuality=" + IntegerToString(diagRejectLongQuality);
    rejects += " shortQuality=" + IntegerToString(diagRejectShortQuality);
+   rejects += " regimeL=" + IntegerToString(diagRejectRegimeLong);
+   rejects += " regimeS=" + IntegerToString(diagRejectRegimeShort);
+   rejects += " fan=" + IntegerToString(diagRejectFan);
    rejects += " trailUpdates=" + IntegerToString(diagTrailExit);
    Print(rejects);
+
+   string regime = "DIAG_SUMMARY regime source=" + source;
+   regime += " mode=" + RegimeGateModeText();
+   regime += " blockedL=" + IntegerToString(diagRejectRegimeLong);
+   regime += " blockedS=" + IntegerToString(diagRejectRegimeShort);
+   Print(regime);
+
+   string regimeLong = "DIAG_SUMMARY regimeLong source=" + source;
+   regimeLong += " bull=" + IntegerToString(diagRegimeLongOpenBull);
+   regimeLong += " neutral=" + IntegerToString(diagRegimeLongOpenNeutral);
+   regimeLong += " bear=" + IntegerToString(diagRegimeLongOpenBear);
+   Print(regimeLong);
+
+   string regimeShort = "DIAG_SUMMARY regimeShort source=" + source;
+   regimeShort += " bull=" + IntegerToString(diagRegimeShortOpenBull);
+   regimeShort += " neutral=" + IntegerToString(diagRegimeShortOpenNeutral);
+   regimeShort += " bear=" + IntegerToString(diagRegimeShortOpenBear);
+   Print(regimeShort);
 
    string pyramid = "DIAG_SUMMARY pyramid source=" + source;
    pyramid += " cycles=" + IntegerToString(diagPyramidCycles);
@@ -2286,6 +3066,75 @@ void PrintDiagnosticsSummary(string source)
    params2 += " ActivePyramidMode=" + PyramidAccountModeText(activePyramidAccountMode);
    params2 += " MaxPyramidAdds=" + IntegerToString(MaxPyramidAdds);
    Print(params2);
+
+   string fan = "DIAG_SUMMARY fan source=" + source;
+   fan += " selection=" + FanEntrySelectionText();
+   fan += " originsL=" + IntegerToString(diagFanLongOrigins);
+   fan += " originsS=" + IntegerToString(diagFanShortOrigins);
+   fan += " expired=" + IntegerToString(diagFanExpired);
+   fan += " invalid=" + IntegerToString(diagFanInvalid);
+   Print(fan);
+
+   string fanLong = "DIAG_SUMMARY fanLong source=" + source;
+   fanLong += " e1Signal=" + IntegerToString(diagFanLongE1Signals);
+   fanLong += " e2Signal=" + IntegerToString(diagFanLongE2Signals);
+   fanLong += " e3Signal=" + IntegerToString(diagFanLongE3Signals);
+   fanLong += " e1Open=" + IntegerToString(diagFanLongE1Opened);
+   fanLong += " e2Open=" + IntegerToString(diagFanLongE2Opened);
+   fanLong += " e3Open=" + IntegerToString(diagFanLongE3Opened);
+   Print(fanLong);
+
+   string fanShort = "DIAG_SUMMARY fanShort source=" + source;
+   fanShort += " e1Signal=" + IntegerToString(diagFanShortE1Signals);
+   fanShort += " e2Signal=" + IntegerToString(diagFanShortE2Signals);
+   fanShort += " e3Signal=" + IntegerToString(diagFanShortE3Signals);
+   fanShort += " e1Open=" + IntegerToString(diagFanShortE1Opened);
+   fanShort += " e2Open=" + IntegerToString(diagFanShortE2Opened);
+   fanShort += " e3Open=" + IntegerToString(diagFanShortE3Opened);
+   Print(fanShort);
+
+   string fanParams = "DIAG_SUMMARY fanParams source=" + source;
+   fanParams += " originWindow=" + IntegerToString(FanOriginCrossWindowBars);
+   fanParams += " originSpread=" + DoubleToString(FanOriginMaxSpread, 2);
+   fanParams += " expansion=" + DoubleToString(FanMinExpansion, 2);
+   fanParams += " higherLow=" + DoubleToString(FanMinHigherLowRSI, 2);
+   fanParams += " maxAge=" + IntegerToString(FanMaxAgeBars);
+   fanParams += " entry2Bars=" + IntegerToString(FanEntry2MinBarsAfterEntry1);
+   Print(fanParams);
+
+   string exitProfile = "DIAG_SUMMARY exitProfile source=" + source;
+   exitProfile += " use=" + (UseDirectionalExitProfile ? "true" : "false");
+   exitProfile += " shortInvalidation=" + (UseShortInvalidationExit ? "true" : "false");
+   exitProfile += " shortInvRSI=" + DoubleToString(ShortInvalidationRSILevel, 2);
+   exitProfile += " shortInvMaxR=" + DoubleToString(ShortInvalidationMaxR, 2);
+   Print(exitProfile);
+
+   string exitProfileLong = "DIAG_SUMMARY exitProfileLong source=" + source;
+   exitProfileLong += " tp1R=" + DoubleToString(TP1RFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " beR=" + DoubleToString(BreakEvenTriggerFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " trailStartR=" + DoubleToString(StartTrailingAfterFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " trailATR=" + DoubleToString(TrailATRMultiplierFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " tp2RSI=" + DoubleToString(TP2RSILevelFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " h4ExitRSI=" + DoubleToString(H4ExitRSILevelFor(POSITION_TYPE_BUY), 2);
+   exitProfileLong += " tp1=" + IntegerToString(diagLongTP1);
+   exitProfileLong += " tp2=" + IntegerToString(diagLongTP2);
+   exitProfileLong += " h4=" + IntegerToString(diagLongH4Exit);
+   exitProfileLong += " trail=" + IntegerToString(diagLongTrailUpdates);
+   Print(exitProfileLong);
+
+   string exitProfileShort = "DIAG_SUMMARY exitProfileShort source=" + source;
+   exitProfileShort += " tp1R=" + DoubleToString(TP1RFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " beR=" + DoubleToString(BreakEvenTriggerFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " trailStartR=" + DoubleToString(StartTrailingAfterFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " trailATR=" + DoubleToString(TrailATRMultiplierFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " tp2RSI=" + DoubleToString(TP2RSILevelFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " h4ExitRSI=" + DoubleToString(H4ExitRSILevelFor(POSITION_TYPE_SELL), 2);
+   exitProfileShort += " tp1=" + IntegerToString(diagShortTP1);
+   exitProfileShort += " tp2=" + IntegerToString(diagShortTP2);
+   exitProfileShort += " h4=" + IntegerToString(diagShortH4Exit);
+   exitProfileShort += " invalid=" + IntegerToString(diagShortInvalidationExit);
+   exitProfileShort += " trail=" + IntegerToString(diagShortTrailUpdates);
+   Print(exitProfileShort);
 
    string longQuality = "DIAG_SUMMARY longQuality source=" + source;
    longQuality += " use=" + (UseLongQualityFilter ? "true" : "false");

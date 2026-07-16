@@ -191,8 +191,36 @@ if [[ -f "$TESTER_LOG" ]]; then
 fi
 touch "$JOURNAL"
 
+VALIDATION_LOG="$RESULT_DIR/report-validation.txt"
+if ! python3 "$SCRIPT_DIR/report_summary.py" \
+  --validate \
+  --expect-expert "Mentor_RSI_MTF_v1" \
+  --expect-symbol "$SYMBOL" \
+  --expect-period "$PERIOD" \
+  --expect-from "$FROM_DATE" \
+  --expect-to "$TO_DATE" \
+  "$RESULT_DIR/report.html" >"$VALIDATION_LOG" 2>&1; then
+  echo "Report Strategy Tester không hợp lệ:" >&2
+  cat "$VALIDATION_LOG" >&2
+  exit 7
+fi
+
+if ! grep -qi 'Test passed' "$JOURNAL"; then
+  echo "Tester log không có xác nhận 'Test passed'. Report bị loại." >&2
+  exit 8
+fi
+if ! grep -q 'DIAG_SUMMARY core source=OnTester' "$JOURNAL"; then
+  echo "Tester log không có DIAG_SUMMARY core source=OnTester. Report bị loại." >&2
+  exit 9
+fi
+if grep -Eqi 'initialization failed|test failed' "$JOURNAL"; then
+   echo "Tester log báo initialization/test failed. Report bị loại." >&2
+   exit 10
+fi
+
 python3 "$SCRIPT_DIR/report_summary.py" "$RESULT_DIR/report.html" >"$RESULT_DIR/summary.txt"
 python3 "$SCRIPT_DIR/report_summary.py" --json "$RESULT_DIR/report.html" >"$RESULT_DIR/summary.json"
+
 if grep -q 'DIAG_SUMMARY.*source=OnTester' "$JOURNAL"; then
   printf '\nDIAG_SUMMARY source=OnTester:\n' >>"$RESULT_DIR/summary.txt"
   grep 'DIAG_SUMMARY.*source=OnTester' "$JOURNAL" >>"$RESULT_DIR/summary.txt"
