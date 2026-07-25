@@ -150,6 +150,14 @@ iconv -f UTF-8 -t UTF-16LE "$CONFIG_READABLE" >>"$CONFIG_UTF16"
 
 TODAY="$(date +%Y%m%d)"
 TESTER_LOG="$MT5_HOME/Tester/logs/$TODAY.log"
+SHADOW_CSV_NAME="Mentor_RSI_MTF_shadow_signals.csv"
+PYRAMID_SHADOW_CSV_NAME="Mentor_RSI_MTF_pyramid_shadow.csv"
+CORE_EXIT_SHADOW_CSV_NAME="Mentor_RSI_MTF_core_exit_shadow.csv"
+DIAG_CSV_NAME="Mentor_RSI_MTF_diag.csv"
+FORWARD_CSV_NAME="Mentor_RSI_MTF_forward.csv"
+SHADOW_MARKER="/private/tmp/mt5-codex-shadow-$RUN_NAME.marker"
+rm -f "$SHADOW_MARKER"
+touch "$SHADOW_MARKER"
 LOG_SIZE_BEFORE=0
 if [[ -f "$TESTER_LOG" ]]; then
   LOG_SIZE_BEFORE="$(stat -f%z "$TESTER_LOG")"
@@ -178,6 +186,42 @@ fi
 
 cp "$RUNTIME_REPORT" "$RESULT_DIR/report.html"
 
+SHADOW_CSV="$(find "$MT5_HOME/Tester" -type f -name "$SHADOW_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$SHADOW_CSV" ]]; then
+  cp "$SHADOW_CSV" "$RESULT_DIR/shadow-signals.csv"
+  python3 "$SCRIPT_DIR/shadow_summary.py" "$RESULT_DIR/shadow-signals.csv" \
+    --output "$RESULT_DIR/shadow-summary.json"
+  if head -1 "$RESULT_DIR/shadow-signals.csv" | grep -q 'entry_efficiency_20'; then
+    python3 "$SCRIPT_DIR/market_state_summary.py" "$RESULT_DIR/shadow-signals.csv" \
+      --output "$RESULT_DIR/market-state-summary.json"
+  fi
+fi
+
+PYRAMID_SHADOW_CSV="$(find "$MT5_HOME/Tester" -type f -name "$PYRAMID_SHADOW_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$PYRAMID_SHADOW_CSV" ]]; then
+  cp "$PYRAMID_SHADOW_CSV" "$RESULT_DIR/pyramid-shadow-signals.csv"
+  python3 "$SCRIPT_DIR/pyramid_shadow_summary.py" "$RESULT_DIR/pyramid-shadow-signals.csv" \
+    --output "$RESULT_DIR/pyramid-shadow-summary.json"
+fi
+
+CORE_EXIT_SHADOW_CSV="$(find "$MT5_HOME/Tester" -type f -name "$CORE_EXIT_SHADOW_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$CORE_EXIT_SHADOW_CSV" ]]; then
+  cp "$CORE_EXIT_SHADOW_CSV" "$RESULT_DIR/core-exit-shadow-signals.csv"
+  python3 "$SCRIPT_DIR/core_exit_shadow_summary.py" "$RESULT_DIR/core-exit-shadow-signals.csv" \
+    --output "$RESULT_DIR/core-exit-shadow-summary.json"
+fi
+
+DIAG_CSV="$(find "$MT5_HOME/Tester" -type f -name "$DIAG_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$DIAG_CSV" ]]; then
+  cp "$DIAG_CSV" "$RESULT_DIR/diagnostics.csv"
+fi
+
+FORWARD_CSV="$(find "$MT5_HOME/Tester" -type f -name "$FORWARD_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$FORWARD_CSV" ]]; then
+  cp "$FORWARD_CSV" "$RESULT_DIR/forward-telemetry.csv"
+fi
+rm -f "$SHADOW_MARKER"
+
 JOURNAL="$RESULT_DIR/journal-summary.txt"
 if [[ -f "$TESTER_LOG" ]]; then
   CURRENT_SIZE="$(stat -f%z "$TESTER_LOG")"
@@ -185,7 +229,7 @@ if [[ -f "$TESTER_LOG" ]]; then
     dd if="$TESTER_LOG" bs=1 skip="$LOG_SIZE_BEFORE" 2>/dev/null \
       | iconv -f UTF-16LE -t UTF-8 2>/dev/null \
       | tr -d '\r' \
-      | grep -E 'testing of Experts|DIAG_SUMMARY|final balance|Test passed|test passed|OnTester result|initialization failed|test failed' \
+      | grep -E 'testing of Experts|DIAG_SUMMARY|FORWARD telemetry|FORWARD ALERT|stopModifyFail|postFillViolation|final balance|Test passed|test passed|OnTester result|initialization failed|test failed' \
       >"$JOURNAL" || true
   fi
 fi

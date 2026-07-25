@@ -27,6 +27,8 @@ if [[ ! -f "$SOURCE" ]]; then
   exit 2
 fi
 
+SOURCE="$(cd "$(dirname "$SOURCE")" && pwd)/$(basename "$SOURCE")"
+
 mkdir -p "$BUILD_DIR"
 ln -sfn "$MT5_HOME" "$RUNTIME_ALIAS"
 ln -sfn "$(dirname "$SOURCE")" "$SOURCE_ALIAS"

@@ -1,0 +1,384 @@
+SETUP LAPTOP WINDOWS CHO FORWARD DEMO STAGE 1
+V26 baseline + V63 challenger | Exness MT5 demo | Chỉ demo, không dùng tiền thật
+
+MỤC ĐÍCH
+  Chạy đồng thời hai MetaTrader 5 độc lập trên laptop Windows MSI Modern 15 RAM 16 GB:
+    - Terminal V26 = baseline, MagicNumber 26072626
+    - Terminal V63 = challenger, MagicNumber 26072663
+
+  Giao dịch EA sẽ tự động sau khi bật Algo Trading. Báo cáo Account History HTML hằng tuần
+  của MT5 vẫn cần xuất thủ công trong bản khóa hiện tại; không tự sửa EA trong Stage 1.
+
+================================================================================
+0. QUY TẮC KHÓA - ĐỌC TRƯỚC
+================================================================================
+
+[ ] Chỉ dùng HAI tài khoản DEMO MT5 riêng. Không dùng tiền thật.
+[ ] Cùng broker, cùng server Exness-MT5Trial17 (xác nhận trong Exness Personal Area),
+    cùng loại tài khoản, cùng account mode và cùng BTCUSD.
+[ ] Mỗi tài khoản đúng: USD, balance 5,000 USD, leverage 1:10.
+[ ] Nếu broker không cấp leverage 1:10, hoặc contract specs giữa hai account khác nhau:
+    DỪNG. Không tự thay leverage/risk/preset.
+[ ] Không gửi password, trading password hoặc 2FA cho Codex.
+[ ] Không giao dịch tay, không gắn EA khác, không nạp/rút/reset balance trong Stage 1.
+[ ] Không sửa source, preset, SL/TP/trailing/pyramid/risk hoặc bất kỳ input nào sau ngày bắt đầu.
+
+Định nghĩa Stage 1:
+  - Tối thiểu đồng thời 90 ngày lịch và 60 closed cycles CHO MỖI hệ thống.
+  - Điều kiện đi tiếp: PF >= 0.95, DD < 8%, dữ liệu đầy đủ, không có lỗi risk/stop.
+
+================================================================================
+1. CHUẨN BỊ LAPTOP WINDOWS
+================================================================================
+
+1.1 Cập nhật và tài khoản Windows
+
+[ ] Dùng Windows 10/11 64-bit đã cập nhật ổn định.
+[ ] Tạo một tài khoản Windows riêng, ví dụ: TradingDemo. Không dùng tài khoản công việc.
+[ ] Đặt password Windows mạnh; bật BitLocker/Device Encryption nếu máy hỗ trợ.
+[ ] Đăng nhập Windows bằng tài khoản TradingDemo trước khi cài MT5.
+[ ] Không bật auto-login nếu laptop có thể bị người khác truy cập.
+
+1.2 Điện, nhiệt và mạng
+
+[ ] Cắm sạc chính hãng liên tục; dùng ổ cắm chống sét hoặc UPS nếu có.
+[ ] Đặt máy nơi thông thoáng, không để trên chăn/đệm, không đóng máy vào túi.
+[ ] Ưu tiên Ethernet. Nếu dùng Wi-Fi, cố định gần router và tắt chế độ tiết kiệm điện Wi-Fi.
+[ ] Không chạy game, render, batch backtest dài hoặc phần mềm nặng trong thời gian forward.
+
+1.3 Cấu hình nguồn Windows (làm khi đang cắm sạc)
+
+Settings > System > Power & battery > Screen and sleep:
+  - Turn off my screen: 5 hoặc 10 phút (được phép).
+  - Put my device to sleep: NEVER.
+
+Control Panel > Power Options > Choose what closing the lid does:
+  - When I close the lid / Plugged in: Do nothing.
+  - Khi cần kiểm tra log, mở máy và dùng bình thường; không tắt nguồn để "đóng" máy.
+
+[ ] Settings > Windows Update: đặt Active hours; không để restart tự động ngoài kiểm soát.
+[ ] Device Manager > Network adapters > Properties > Power Management:
+    bỏ chọn "Allow the computer to turn off this device to save power" nếu mục này có.
+
+1.4 Thư mục làm việc
+
+[ ] Tạo các thư mục sau bằng File Explorer:
+
+    C:\Trading\build-bot\
+    C:\Trading\MT5-V26\
+    C:\Trading\MT5-V63\
+    C:\Trading\forward-data\V26\
+    C:\Trading\forward-data\V63\
+
+[ ] Chép toàn bộ repository Build-bot vào C:\Trading\build-bot\
+[ ] Cài Python 3.11+ cho Windows từ python.org; chọn "Add python.exe to PATH".
+[ ] Mở Command Prompt và kiểm tra:
+
+    py --version
+    cd C:\Trading\build-bot
+    py tools\mt5\forward_gate.py --help
+
+  Nếu lệnh py không chạy, dừng ở đây và sửa Python PATH trước.
+
+================================================================================
+2. TẠO VÀ KIỂM TRA HAI ACCOUNT EXNESS DEMO
+================================================================================
+
+2.1 Trong Exness Personal Area (tự làm, không chia sẻ credential)
+
+[ ] Tạo/kiểm tra hai account demo MT5 riêng. Ghi alias:
+    V26_BASELINE: login number = ____________________
+    V63_CHALLENGER: login number = __________________
+
+[ ] Với mỗi account, ghi server trong Personal Area. Chỉ tiếp tục nếu cả hai là:
+    Exness-MT5Trial17
+
+[ ] Ghi account type, currency, balance, leverage, mode:
+
+    V26: type __________ currency USD / balance 5,000 / leverage 1:10 / mode __________
+    V63: type __________ currency USD / balance 5,000 / leverage 1:10 / mode __________
+
+[ ] Nếu hai account không giống type/mode/spec: tạo lại account demo phù hợp.
+[ ] Đảm bảo đây là "MT5 trading account", không phải Exness platform account.
+
+2.2 Contract specifications
+
+Sau khi login từng MT5, mở Market Watch > chuột phải BTCUSD > Specification.
+
+[ ] Ghi cho V26: symbol exact __________; contract size __________; min lot __________;
+    volume step __________; tick size __________; tick value __________; leverage __________.
+[ ] Ghi cho V63: symbol exact __________; contract size __________; min lot __________;
+    volume step __________; tick size __________; tick value __________; leverage __________.
+[ ] Các giá trị trên phải khớp giữa V26 và V63.
+[ ] Nếu tên symbol có suffix (ví dụ BTCUSDm), CẢ HAI phải dùng đúng cùng tên đó.
+
+================================================================================
+3. CÀI HAI META TRADER 5 ĐỘC LẬP
+================================================================================
+
+3.1 Cài đặt
+
+[ ] Tải MT5 desktop từ Exness/MetaTrader 5. Dùng bản MT5 hiện hành.
+[ ] Cài lần 1 vào C:\Trading\MT5-V26\
+[ ] Cài lần 2 vào C:\Trading\MT5-V63\
+[ ] Không cài đè lần hai lên thư mục lần một.
+[ ] Khởi động từng terminal riêng, chọn File > Open Data Folder.
+[ ] Ghi Data Folder thực tế:
+
+    V26 Data Folder: ______________________________________________
+    V63 Data Folder: ______________________________________________
+
+[ ] Hai Data Folder PHẢI khác nhau. Nếu giống nhau: dừng, không đăng nhập hai account.
+
+3.2 Đăng nhập
+
+[ ] Terminal V26: File > Login to Trade Account > nhập login V26, trading password,
+    server Exness-MT5Trial17.
+[ ] Terminal V63: làm tương tự bằng login V63.
+[ ] Chờ giá BTCUSD cập nhật; kiểm tra status kết nối/ping ở góc phải dưới MT5.
+[ ] Không dùng một terminal để đăng nhập đổi qua lại giữa hai account.
+
+3.3 Cấu hình Expert Advisors trong TỪNG terminal
+
+Tools > Options > Expert Advisors:
+  [ ] Allow algorithmic trading: bật.
+  [ ] Không bật DLL imports (EA này không cần).
+  [ ] Không bật WebRequest (EA này không cần).
+  [ ] Giữ "Disable automated trading when the account has been changed" bật.
+  [ ] Giữ "Disable automated trading when the profile has been changed" bật.
+  [ ] Không đổi account/profile sau khi Stage 1 bắt đầu.
+
+================================================================================
+4. CÀI EA VÀ KHÓA BUILD
+================================================================================
+
+4.1 File nguồn/preset cần dùng
+
+Source:
+  C:\Trading\build-bot\outputs\Mentor_RSI_MTF_v1.mq5
+  SHA-256 bắt buộc:
+  cc62d5303b05e2a9ae0bdd933657e55b0c3346b0c9c230669b8f76b34087618e
+
+Preset V26:
+  C:\Trading\build-bot\outputs\presets\79_v26_forward_demo.set
+  SHA-256:
+  ef8206f38b38c4f34b6bb155ea770684f67925ee3a05ad0dfe240150569e6aa6
+
+Preset V63:
+  C:\Trading\build-bot\outputs\presets\80_v63_forward_demo.set
+  SHA-256:
+  35d928550406f0b72a4fb706566fab8540ec7c0ea395a5cf101c53c5adcae322
+
+4.2 Kiểm hash trên Windows PowerShell
+
+Trong C:\Trading\build-bot:
+
+  Get-FileHash .\outputs\Mentor_RSI_MTF_v1.mq5 -Algorithm SHA256
+  Get-FileHash .\outputs\presets\79_v26_forward_demo.set -Algorithm SHA256
+  Get-FileHash .\outputs\presets\80_v63_forward_demo.set -Algorithm SHA256
+
+[ ] Nếu hash nào khác: dừng và không dùng file đó.
+
+4.3 Compile cho terminal V26
+
+[ ] Trong V26: File > Open Data Folder.
+[ ] Chép Mentor_RSI_MTF_v1.mq5 vào MQL5\Experts\Advisors\.
+[ ] Mở MetaEditor từ terminal V26, mở file source, nhấn F7 Compile.
+[ ] Xác nhận "0 errors, 0 warnings".
+
+4.4 Compile cho terminal V63
+
+[ ] Lặp lại đúng bước trên trong Data Folder V63.
+[ ] Compile ngay trong MetaEditor của terminal V63.
+[ ] Xác nhận "0 errors, 0 warnings".
+
+4.5 Gắn EA/chart
+
+Tại terminal V26:
+  [ ] Mở chart BTCUSD đúng tên broker, timeframe H1.
+  [ ] Navigator > Expert Advisors > Advisors > Mentor_RSI_MTF_v1.
+  [ ] Kéo EA vào chart; trong Inputs, Load preset V26.
+  [ ] KHÔNG bật Algo Trading cho đến khi hoàn thành smoke và checklist launch.
+
+Tại terminal V63:
+  [ ] Mở chart BTCUSD cùng tên broker, timeframe H1.
+  [ ] Gắn cùng EA; Load preset V63.
+  [ ] KHÔNG bật Algo Trading cho đến khi hoàn thành smoke và checklist launch.
+
+Kiểm các input khóa:
+
+  V26: RiskPerTradePct=0.5; MagicNumber=26072626
+  V63: RiskPerTradePct=0.5; MagicNumber=26072663
+  Cả hai:
+    EntryQualityGateMode=0
+    VolatilityRiskMode=0
+    ShortWideSLRiskMode=0
+    ShadowSignalMode=1
+    MarketStateShadowMode=1
+    ExportDiagnosticsCsv=true
+    ExportForwardTelemetryCsv=true
+    ForwardHeartbeatBars=24
+
+================================================================================
+5. BẮT BUỘC: SMOKE TRÊN LAPTOP/TRADING TERMINAL MỤC TIÊU
+================================================================================
+
+Không được bỏ qua bước này. Chạy Strategy Tester trên MỖI terminal với:
+
+  Symbol BTCUSD đúng broker | H1 | Real ticks
+  From 2026.06.01 | To 2026.06.30 | Deposit 5,000 USD | Leverage 1:10
+
+Chạy tổng cộng bốn lần:
+
+  1. V26 OFF: 26_v23_add1_trigger_2p25_lock_0p75.set
+  2. V26 ON:  79_v26_forward_demo.set
+  3. V63 OFF: 63_v30_d1_early_veto.set
+  4. V63 ON:  80_v63_forward_demo.set
+
+[ ] Xuất bốn HTML reports.
+[ ] Sao chép report và journal vào C:\Trading\forward-data\smoke\.
+[ ] Gửi/copy các file đó vào project để Codex kiểm tra.
+[ ] Với từng cặp V26 OFF/ON và V63 OFF/ON, Total Trades, Net Profit, PF,
+    Equity DD và execution diagnostics phải khớp tuyệt đối.
+[ ] Nếu không khớp: KHÔNG bắt đầu Stage 1.
+
+================================================================================
+6. KHỞI ĐỘNG STAGE 1
+================================================================================
+
+6.1 Ngày bắt đầu
+
+Ngày/giờ bắt đầu chung (Asia/Ho_Chi_Minh): ______________________________
+
+[ ] Cả hai account không có position/pending order.
+[ ] Balance hai bên đúng 5,000 USD.
+[ ] Không có EA khác/chức năng copy trade/chạy manual trade.
+[ ] Archive các file cũ của riêng từng terminal trước launch. KHÔNG xóa dữ liệu
+    đang dùng của terminal khác.
+
+Trong MQL5\Files của từng Data Folder, archive (nếu đã có file cũ):
+  Mentor_RSI_MTF_forward.csv
+  Mentor_RSI_MTF_diag.csv
+  Mentor_RSI_MTF_shadow_signals.csv
+
+6.2 Bật hệ thống
+
+[ ] Kiểm lại chart V26 = BTCUSD H1 + preset V79 + Magic 26072626.
+[ ] Kiểm lại chart V63 = BTCUSD H1 + preset V80 + Magic 26072663.
+[ ] Bật nút Algo Trading ở cả hai terminal.
+[ ] Journal mỗi terminal phải có "FORWARD telemetry initialized".
+[ ] File MQL5\Files\Mentor_RSI_MTF_forward.csv phải có dòng event=INIT.
+[ ] INIT phải có đúng magic/symbol/leverage/contract_size/min lot/volume step/tick value.
+[ ] Chép snapshot ban đầu các CSV vào:
+    C:\Trading\forward-data\V26\YYYY-MM-DD_start\
+    C:\Trading\forward-data\V63\YYYY-MM-DD_start\
+
+Nếu INIT không có, telemetry không ghi, hoặc contract specs V26/V63 khác nhau:
+  TẮT Algo Trading, không tính Stage 1, kiểm tra lại setup.
+
+================================================================================
+7. TỰ KHỞI ĐỘNG SAU REBOOT / MẤT ĐIỆN
+================================================================================
+
+Mục tiêu: MT5 tự mở lại khi người dùng TradingDemo đăng nhập Windows.
+Điều này chỉ tự khởi động terminal; sau reboot phải kiểm tra Algo Trading và Journal.
+
+7.1 Task Scheduler
+
+Trong Windows Task Scheduler, tạo HAI task:
+
+  Task 1: MT5-V26-Start
+    Trigger: At log on of user TradingDemo
+    Action: Start a program
+    Program/script: đường dẫn terminal64.exe của C:\Trading\MT5-V26\
+    Start in: thư mục C:\Trading\MT5-V26\
+    Run only when user is logged on: chọn.
+    Run with highest privileges: chọn nếu MT5 được cài theo quyền admin.
+
+  Task 2: MT5-V63-Start
+    Làm tương tự, nhưng dùng terminal64.exe của C:\Trading\MT5-V63\.
+
+[ ] Bấm Run từng task để test. Xác nhận mỗi task mở đúng MỘT terminal.
+[ ] Không dùng task "Run whether user is logged on or not" cho MT5 GUI.
+[ ] Không bật Windows auto-login trừ khi máy đặt tại nơi vật lý an toàn và bạn hiểu
+    rằng điều này làm giảm bảo mật.
+
+7.2 Sau mọi reboot/reconnect lớn
+
+[ ] Đăng nhập Windows TradingDemo.
+[ ] Kiểm tra cả hai terminal mở đúng account/chart/preset.
+[ ] Kiểm tra Algo Trading đang bật.
+[ ] Kiểm tra Journal và telemetry có RECONNECT/INIT hợp lý.
+[ ] Không đổi preset hay attach lại EA tùy tiện.
+
+================================================================================
+8. THEO DÕI HẰNG TUẦN VÀ CỔNG STAGE 1
+================================================================================
+
+Mỗi tuần một lần, cho TỪNG account:
+
+1. Account History > chọn Custom Period từ ngày bắt đầu đến hiện tại.
+2. Save as Report (HTML).
+3. Sao chép vào thư mục tuần riêng:
+   - report.html
+   - Mentor_RSI_MTF_forward.csv
+   - Mentor_RSI_MTF_diag.csv
+   - Mentor_RSI_MTF_shadow_signals.csv
+   - Experts/Journal log có DIAG_SUMMARY và lỗi EA
+
+Ví dụ thư mục:
+  C:\Trading\forward-data\V26\2026-07-31\
+  C:\Trading\forward-data\V63\2026-07-31\
+
+4. Chạy trên Command Prompt trong C:\Trading\build-bot\:
+
+  py tools\mt5\report_summary.py --json C:\Trading\forward-data\V26\YYYY-MM-DD\report.html > C:\Trading\forward-data\V26\YYYY-MM-DD\summary.json
+
+  py tools\mt5\forward_gate.py gate --stage stage1 --summary C:\Trading\forward-data\V26\YYYY-MM-DD\summary.json --telemetry C:\Trading\forward-data\V26\YYYY-MM-DD\Mentor_RSI_MTF_forward.csv --journal C:\Trading\forward-data\V26\YYYY-MM-DD\expert-journal.txt --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+
+  Lặp lại cho V63.
+
+Kết quả gate:
+  0 = PASS: đạt cổng đang đánh giá.
+  2 = WAIT: chưa đủ 90 ngày VÀ 60 closed cycles; tiếp tục nếu không có FAIL.
+  3 = FAIL: phải pause và giữ nguyên bằng chứng.
+
+================================================================================
+9. PAUSE NGAY - KHÔNG TỰ SỬA THAM SỐ
+================================================================================
+
+TẮT Algo Trading của terminal bị ảnh hưởng ngay khi có MỘT trong các điều kiện:
+
+  - Equity DD chạm 8%.
+  - Event ACTUAL_RISK_VIOLATION.
+  - Event POST_FILL_VIOLATION.
+  - Event STOP_MODIFY_FAIL.
+  - actual_risk_money vượt desired_risk_money.
+  - MISSING_STATE, initialization failure hoặc disconnect chưa reconnect.
+
+Khi pause:
+  1. Không xóa CSV/log/report.
+  2. Chép toàn bộ evidence vào thư mục dated.
+  3. Ghi giờ, account alias và trạng thái position.
+  4. Gửi file cho Codex để phân tích. Không tăng risk để "cứu" PF.
+
+================================================================================
+10. THÔNG TIN GỬI CHO CODEX SAU KHI HOÀN THÀNH
+================================================================================
+
+Không gửi password hoặc 2FA. Chỉ gửi:
+
+  - Windows version.
+  - V26/V63 Data Folder paths.
+  - Account type/mode, symbol exact, contract specs đã ghi.
+  - Xác nhận balance/leverage/server của hai account.
+  - Bốn smoke HTML reports + journals.
+  - Ngày bắt đầu Stage 1 sau khi smoke PASS.
+
+TÀI LIỆU LIÊN QUAN TRONG PROJECT
+  outputs\forward_demo_runbook.md
+  outputs\forward_demo_lock_manifest.json
+  outputs\forward_weekly_log_template.csv
+  tools\mt5\forward_gate.py
+
+KẾT THÚC. Chỉ bật Stage 1 sau khi toàn bộ checkbox từ Mục 0 đến Mục 6 đã hoàn thành.

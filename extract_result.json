@@ -1,0 +1,1086 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-06-28T22:38:42.479679",
+  "methodology_overview": "LSteven sử dụng hệ thống giao dịch đa khung thời gian (Multi-Timeframe) kết hợp RSI với hai đường MA (EMA9 và WMA45) để xác định momentum và điểm vào/ra lệnh. Bias được xác định từ khung lớn (W/D) xuống khung nhỏ (M15), chỉ trade khi ít nhất 3/4 khung đồng thuận. Baseline (BL) đóng vai trò bộ lọc xu hướng động: chỉ long khi giá trên BL dốc lên, chỉ short khi giá dưới BL dốc xuống. Điểm vào lệnh tối ưu là khi RSI curl từ vùng oversold/overbought kết hợp xác nhận trap (false breakout) trên khung nhỏ. Quản lý rủi ro theo nguyên tắc phân chia vị thế nhiều lần, chốt lời dần theo từng sóng và kéo SL về entry khi có lời đủ lớn.",
+  "summary": {
+    "total_rules": 45,
+    "entry_rules": 14,
+    "exit_rules": 7,
+    "filter_rules": 13,
+    "risk_rules": 5,
+    "bias_rules": 6
+  },
+  "rules": [
+    {
+      "id": "rule_001",
+      "name": "Multi-Timeframe Bias Xác Nhận - Top-Down Framework",
+      "category": "bias",
+      "priority": 1,
+      "timeframes": [
+        "W",
+        "1D",
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Xác định bias từ W/D trước: L/S indicator W và D phải cùng chiều",
+        "Daily: BL dốc lên + giá trên BL = bullish bias; BL dốc xuống + giá dưới BL = bearish bias",
+        "4H: RSI trên EMA9 và WMA45, EMA9 trên WMA45 = bullish confirmation",
+        "1H: RSI curl theo chiều bias đã xác định",
+        "Ít nhất 3/4 khung (W/D/4H/1H) phải đồng thuận cùng chiều trước khi entry",
+        "Nếu khung nhỏ mâu thuẫn khung lớn: follow khung lớn, giảm size hoặc đứng ngoài"
+      ],
+      "action": "Top-down analysis: W→D→4H→1H→M15. Chỉ trade khi ≥3 khung aligned. Khung lớn xác định bias, khung bé xác nhận timing entry",
+      "sl_rule": "SL đặt theo cấu trúc khung entry (không theo noise khung nhỏ hơn)",
+      "tp_rule": "TP theo swing level/BL khung lớn hơn (D hoặc 4H)",
+      "confidence": 0.95,
+      "codeable": true
+    },
+    {
+      "id": "rule_002",
+      "name": "Baseline (BL) Direction Filter - Chỉ Trade Theo Hướng BL",
+      "category": "filter",
+      "priority": 1,
+      "timeframes": [
+        "1D",
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "BL tính bằng dual MA system: 70,5,2,close,150,0,2,close,0,1",
+        "Giá trên BL + BL dốc lên = CHỈ LONG",
+        "Giá dưới BL + BL dốc xuống = CHỈ SHORT",
+        "BL phẳng hoặc giá cắt qua lại BL loạn xạ = KHÔNG TRADE",
+        "Pullback về BL trong uptrend (BL dốc lên) = vùng mua tối ưu",
+        "Close nến dưới BL trong long trade = tín hiệu exit"
+      ],
+      "action": "Dùng BL làm dynamic support/resistance và trend filter. Không long khi giá dưới BL dốc xuống. Không short khi giá trên BL dốc lên",
+      "sl_rule": "Long: SL dưới BL. Short: SL trên BL. Nếu giá close ngược chiều BL = thoát lệnh",
+      "tp_rule": "Long: giữ khi giá trên BL, xét thoát khi BL flatten hoặc curl xuống. Short: giữ khi giá dưới BL",
+      "confidence": 0.95,
+      "codeable": true
+    },
+    {
+      "id": "rule_003",
+      "name": "RSI Curl Entry - EMA9 Cắt Lên WMA45 từ Oversold",
+      "category": "entry",
+      "priority": 1,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI(14) chạm hoặc dưới 30 (oversold zone)",
+        "RSI bắt đầu curl lên tạo hình đáy tròn (U-shape)",
+        "EMA(9,RSI) cắt lên WMA(45,RSI) từ dưới lên",
+        "WMA(45,RSI) bắt đầu phẳng hoặc hướng lên",
+        "Giá tại hoặc trên BL (không dưới BL dốc xuống)",
+        "Nến xanh xác nhận tại điểm RSI curl",
+        "Bias khung lớn (4H/D) đồng thuận long"
+      ],
+      "action": "Entry LONG khi RSI curl lên từ oversold (<30) với EMA9 cắt lên WMA45. Đây là signal buy chính của hệ thống",
+      "sl_rule": "SL dưới đáy nến tín hiệu hoặc dưới BL gần nhất. Nếu RSI curl thất bại (không vượt EMA9) = không entry",
+      "tp_rule": "TP1 khi RSI chạm 65-70 (chốt 50%). TP2 khi RSI overbought >70 (chốt 25%). Giữ 25% theo sóng lớn",
+      "confidence": 0.92,
+      "codeable": true
+    },
+    {
+      "id": "rule_004",
+      "name": "RSI Curl Short Entry - EMA9 Cắt Xuống WMA45 từ Overbought",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "short",
+      "conditions": [
+        "RSI(14) đạt hoặc vượt 70 (overbought zone)",
+        "RSI bắt đầu curl xuống từ đỉnh >70",
+        "EMA(9,RSI) cắt xuống WMA(45,RSI) từ trên xuống",
+        "WMA(45,RSI) bắt đầu hướng xuống",
+        "Giá tạo false breakout lên (trap) với wick dài hoặc rejection candle",
+        "Giá dưới BL hoặc BL dốc xuống",
+        "Bias khung lớn (4H/D) đồng thuận short, L/S Weekly/Daily bearish"
+      ],
+      "action": "Entry SHORT khi RSI curl xuống từ overbought (>70) với EMA9 cắt xuống WMA45. Confirm bằng trap candle (wick dài lên)",
+      "sl_rule": "SL trên đỉnh wick trap candle hoặc trên swing high gần nhất",
+      "tp_rule": "TP1 khi RSI về vùng 45-50 (chốt 50%). TP2 khi RSI chạm 30 (chốt 25%). Giữ 25% nếu trend tiếp tục",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_005",
+      "name": "Trap Detection Entry - False Breakout Reversal",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "1H",
+        "4H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Trap xuống (long signal): dump mạnh với wick dài xuống, volume spike đỏ, RSI <30, giá nhanh chóng đảo chiều lên",
+        "Trap lên (short signal): pump mạnh với wick dài lên, volume spike xanh, RSI >70, giá nhanh chóng đảo chiều xuống",
+        "Trap hoàn thành khi nến đóng cửa ngược chiều breakout",
+        "Bias khung lớn phải hỗ trợ hướng ngược chiều trap",
+        "H4 trap chưa giải quyết = không vào mạnh; đợi xác nhận"
+      ],
+      "action": "Entry ngược chiều trap sau khi trap confirm bằng nến đóng cửa. Trap là điều kiện bắt buộc cho entry chất lượng cao",
+      "sl_rule": "Long (trap xuống): SL dưới đáy wick trap. Short (trap lên): SL trên đỉnh wick trap",
+      "tp_rule": "Long: TP tại vùng resistance trước đó hoặc BL. Short: TP tại support trước đó hoặc BL",
+      "confidence": 0.92,
+      "codeable": true
+    },
+    {
+      "id": "rule_006",
+      "name": "RSI Double Bottom Entry - Higher Low Divergence",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI tạo đáy lần 1 trong vùng oversold (<30)",
+        "RSI bounce lên nhưng chưa vượt 50, sau đó tụt xuống tạo đáy 2",
+        "Đáy 2 của RSI PHẢI CAO HƠN đáy 1 (higher low = bullish divergence)",
+        "Nếu đáy 2 thấp hơn đáy 1 = bác bỏ setup, chờ tiếp",
+        "BL bắt đầu cong lên hoặc flatten tại khu vực đáy",
+        "EMA(9,RSI) và WMA(45,RSI) tạo W-shape và bắt đầu hướng lên",
+        "Giá tạo đáy tương ứng không thấp hơn đáy 1 (price divergence)"
+      ],
+      "action": "Chuẩn bị mua khi thấy đáy RSI 1. Vào LONG khi đáy 2 RSI cao hơn đáy 1 và RSI curl lên xác nhận",
+      "sl_rule": "SL dưới đáy giá tương ứng với đáy RSI thứ 2. Nếu phá đáy 2 = setup invalid",
+      "tp_rule": "TP1 khi RSI vượt 50 (chốt 30%). TP2 khi RSI chạm 65-70 (chốt 40%). Giữ 30% theo sóng lớn",
+      "confidence": 0.92,
+      "codeable": true
+    },
+    {
+      "id": "rule_007",
+      "name": "Phased Entry Strategy - Chia Vị Thế Nhiều Lần",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Không all-in một lúc dù setup đẹp",
+        "Entry 1 (1/3 vol): khi form RSI xuất hiện trên 4H (RSI bắt đầu curl)",
+        "Entry 2 (1/3 vol): khi RSI cắt lên EMA9 xác nhận trên 1H",
+        "Entry 3 (1/3 vol): khi breakout kháng cự với volume spike hoặc M15 trap confirm",
+        "Trong tam giác tích lũy/consolidation: chia vol thành 5 phần nhỏ hơn do risk tụt đáy",
+        "Max position tổng cộng: 30-40% vốn cho setup rõ ràng, 10-15% cho setup rủi ro cao"
+      ],
+      "action": "Phân chia vào lệnh 3 lần theo xác nhận từng khung. Tổng risk/trade không vượt 5-7% tài khoản",
+      "sl_rule": "SL chung tại mức thấp nhất của setup. Điều chỉnh khi vào thêm. Reward/Risk ≥1:1 tại mỗi lần vào",
+      "tp_rule": "Chốt dần: 50% tại TP1, 25% tại TP2, 25% để gồng sóng lớn theo trailing SL",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_008",
+      "name": "Volume Spike Confirmation - Bộ Lọc Tín Hiệu",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Volume spike ≥2-3x so với MA(20) của volume",
+        "Breakout thật: volume spike + nến body lớn + RSI breakout đồng thời",
+        "Breakout giả (fake): volume thấp khi breakout = cảnh báo trap",
+        "Consolidation/sideways: volume thấp đáng kể so với trung bình = thị trường chưa quyết định",
+        "Volume thấp bất thường dù tín hiệu kỹ thuật đẹp = skip hoặc size tối thiểu"
+      ],
+      "action": "Xác nhận breakout/signal bằng volume. Volume spike + RSI curl + BL direction = tín hiệu mạnh nhất, tăng size. Volume thấp = giảm size hoặc bỏ qua",
+      "sl_rule": "Volume cao: SL có thể rộng hơn (move thật). Volume thấp: SL rất chặt hoặc không vào",
+      "tp_rule": "Volume cao kèm breakout: TP xa hơn. Volume thấp: TP nhỏ, chốt nhanh",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_009",
+      "name": "RSI Chop Zone Filter - Không Trade Khi RSI Cắt Loạn",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "RSI dao động trong biên hẹp 45-65 không có hướng rõ ràng",
+        "EMA(9,RSI) và WMA(45,RSI) gần nhau, đan xen nhau liên tục",
+        "Price action choppy: giá cắt qua lại BL nhiều lần trong thời gian ngắn",
+        "BL phẳng hoặc không nghiêng rõ hướng",
+        "Volume thấp, không có volume spike xác nhận hướng"
+      ],
+      "action": "KHÔNG ENTRY khi RSI chop. KHÔNG TRADE khi giá cắt qua lại BL loạn. Chờ RSI xác lập xu hướng rõ ràng (curl dứt khoát lên hoặc xuống)",
+      "sl_rule": "N/A - filter rule, không vào lệnh",
+      "tp_rule": "N/A - filter rule, không vào lệnh",
+      "confidence": 0.92,
+      "codeable": true
+    },
+    {
+      "id": "rule_010",
+      "name": "RSI Overbought Curl Down - Exit Long Signal",
+      "category": "exit",
+      "priority": 1,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI(14) vượt 70 (green dashed line) tạo đỉnh",
+        "RSI bắt đầu curl xuống từ vùng >70",
+        "EMA(9,RSI) cắt xuống WMA(45,RSI)",
+        "WMA(45,RSI) bắt đầu hướng xuống",
+        "Giá ở vùng đỉnh cục bộ, có dấu hiệu rejection hoặc wick dài trên",
+        "Không cần exact top - toàn bộ zone RSI >70 là vùng exit"
+      ],
+      "action": "Chốt lời dần khi RSI vượt 70 rồi curl xuống. TP50% ngay khi RSI curl từ >70. Không mở long mới trong vùng này",
+      "sl_rule": "Trailing SL lên theo BL hoặc đáy nến trong vùng overbought",
+      "tp_rule": "Chốt 50% khi RSI bắt đầu curl xuống từ >70. Chốt thêm 25% khi EMA9 cắt xuống WMA45. Giữ 25% nếu HTF còn bullish",
+      "confidence": 0.92,
+      "codeable": true
+    },
+    {
+      "id": "rule_011",
+      "name": "H4 RSI Deterioration - Full Exit Signal",
+      "category": "exit",
+      "priority": 1,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI H4 đạt đỉnh >70 rồi curl xuống mạnh",
+        "EMA(9,RSI) cắt xuống WMA(45,RSI) trên H4",
+        "WMA(45,RSI) bắt đầu dốc xuống trên H4",
+        "RSI H4 về dưới 50 xác nhận weakness",
+        "Hoặc: RSI H1 curl xuống mạnh từ >60, không recovery = H1 không đẩy được H4 lên tiếp"
+      ],
+      "action": "Exit toàn bộ hoặc giữ tối đa 25% khi H4 RSI deteriorate. Dùng RSI H4 deterioration làm exit trigger, không chờ price SL",
+      "sl_rule": "RSI H4 cross xuống WMA45 = exit signal, không cần chờ SL price hit",
+      "tp_rule": "Exit toàn bộ. Nếu giữ 25%: đặt trailing SL tại entry",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_012",
+      "name": "Partial Exit - Chốt Dần Theo Từng Sóng",
+      "category": "exit",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Đang có position chạy lời",
+        "M15 ở sóng 5 hoặc RSI M15 overbought >70 (giai đoạn cuối impulse)",
+        "H1 có dấu hiệu điều chỉnh nhẹ (RSI curl xuống từ 65-70)",
+        "H4 chưa overbought và còn room chạy",
+        "Giá tiếp cận kháng cự lịch sử hoặc Fibonacci extension"
+      ],
+      "action": "Chốt 50% khi M15/H1 hết lực (RSI >70 curl xuống). Giữ 50% chờ H4 target. Không TP hết một lần",
+      "sl_rule": "Kéo SL lên entry sau khi chốt phần đầu. Để lại lệnh core với trailing SL theo BL H4",
+      "tp_rule": "50% tại M15/H1 RSI overbought. 25% tại H4 RSI overbought. 25% trailing theo HTF structure",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_013",
+      "name": "Trendline Breakout + Backtest Entry",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Giá trong descending channel/downtrend trendline rõ ràng",
+        "Nến breakout lên trên đường trendline với volume spike",
+        "Sau breakout, giá pullback/backtest về trendline (test lại từ trên)",
+        "Giá giữ được vùng backtest (không tụt thêm xuống dưới trendline)",
+        "RSI curl lên từ 40-50 tại điểm backtest, EMA9 hướng lên",
+        "BL bắt đầu flatten hoặc hướng lên"
+      ],
+      "action": "Entry long tại vùng backtest về trendline sau khi xác nhận giá giữ được. Không entry ngay khi breakout để tránh fake",
+      "sl_rule": "SL dưới đáy nến backtest hoặc dưới đường trendline vừa phá (đóng nến dưới trendline = invalid)",
+      "tp_rule": "TP1 tại kháng cự horizontal gần nhất. TP2 tại đỉnh swing cũ hoặc measured move",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_014",
+      "name": "VWAP Weekly Filter - Điều Kiện Quan Trọng Nhất",
+      "category": "filter",
+      "priority": 1,
+      "timeframes": [
+        "1H",
+        "30M",
+        "15M"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Giá phải đóng cửa TRÊN VWAP Weekly để valid long",
+        "VWAP Weekly là ngưỡng tối thiểu không được phá cho long trades",
+        "Nếu giá dưới VWAP Weekly: không entry long dù tín hiệu kỹ thuật đẹp",
+        "VWAP Monthly middle: giá trên = bias long, giá dưới = bias short",
+        "VWAP Monthly upper band = TP mục tiêu cho long. Lower band = TP cho short"
+      ],
+      "action": "Bỏ qua tất cả tín hiệu long nếu giá dưới VWAP Weekly. Vào long chỉ khi giá close trên VWAP W và đang uptrend",
+      "sl_rule": "Long: SL dưới VWAP Weekly (close dưới = cắt lỗ). Short: SL trên VWAP Monthly middle",
+      "tp_rule": "Long: TP tại VWAP Monthly upper band hoặc VWAP 12M. Short: TP tại VWAP Monthly lower band",
+      "confidence": 0.95,
+      "codeable": true
+    },
+    {
+      "id": "rule_015",
+      "name": "H4 RSI Structure Gate - Chỉ Long Khi H4 Đẹp",
+      "category": "filter",
+      "priority": 1,
+      "timeframes": [
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "H4 RSI: EMA(9) phải nằm trên WMA(45) và cả hai hướng lên",
+        "H4 BL dốc lên hoặc đang flatten từ downtrend (không dốc xuống)",
+        "H4 RSI không ở vùng 55-65 đang roll over xuống",
+        "H4 candle phải bullish dominant (nến xanh chiếm đa số gần đây)",
+        "RSI H4 không dưới 50 trong uptrend (nếu dưới 50 phải có oversold rõ để entry)"
+      ],
+      "action": "CHỈ VÀO LONG khi H4 setup đẹp đủ điều kiện. Nếu H4 chưa đẹp thì KHÔNG trade dù TF nhỏ hơn có tín hiệu",
+      "sl_rule": "N/A - filter gate, áp dụng trước khi xét entry",
+      "tp_rule": "N/A - filter gate",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_016",
+      "name": "RSI Curl Thất Bại - Chờ Setup Mới",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI trong vùng thấp (30-40), có biểu hiện curl lên",
+        "RSI curl THẤT BẠI: không vượt được EMA(9) hoặc WMA(45) sau khi thử curl",
+        "Sau curl thất bại, RSI tiếp tục tụt xuống thấp hơn hoặc sideways",
+        "WMA(45,RSI) tạo hình chữ U (bowl shape) - cần thêm thời gian"
+      ],
+      "action": "KHÔNG vội long khi RSI curl thất bại. Tính đây là một nhịp tụt MỚI. Chờ RSI curl thành công hoàn toàn (vượt qua cả EMA9 và WMA45) mới xét entry",
+      "sl_rule": "Chưa vào lệnh khi RSI curl chưa được xác nhận bởi close trên EMA9",
+      "tp_rule": "Chờ setup hoàn chỉnh mới tính TP",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_017",
+      "name": "Consolidation Sideways Filter - Skip hoặc Giảm Size",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "1D",
+        "4H",
+        "1H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Giá nằm trong tam giác tích lũy hoặc range hẹp",
+        "RSI dao động giữa 40-60 không có form rõ",
+        "Volume record thấp, không có spike",
+        "BL phẳng hoặc không nghiêng rõ hướng",
+        "Khung nhỏ (M15/H1) nhiễu loạn, không có form rõ ràng"
+      ],
+      "action": "Dừng trade scalp M15. Nếu vào: chỉ từ H4+ với form cuộn rõ hoặc chờ breakout xác nhận. Giảm size tối thiểu khi trong consolidation",
+      "sl_rule": "SL tại support/resistance cứng trong tam giác (VWAP W, Fibo 0.5, BL)",
+      "tp_rule": "TP là breakout ra khỏi tam giác hoặc Fibonacci 0.5 từ trendline",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_018",
+      "name": "Parabolic/FOMO Move - Không Chase, Không Bắt Đỉnh",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "12H",
+        "1D"
+      ],
+      "direction": "short",
+      "conditions": [
+        "Giá tăng điên cuồng liên tục, nến xanh liên tiếp không pullback (parabolic)",
+        "RSI H4 ở vùng 70-80+ overbought extreme",
+        "Góc trendline của đáy liên tục dựng đứng hơn (30°→45°→60°+)",
+        "Volume spike cực đại tại đỉnh parabolic",
+        "RSI bắt đầu curl xuống từ đỉnh"
+      ],
+      "action": "KHÔNG long chase khi parabolic. KHÔNG short ngay khi RSI overbought trong FOMO. Đợi H4 xác nhận tụt (nến đỏ rõ ràng) mới short. Khi phá trendline dốc → short",
+      "sl_rule": "Short: SL trên đỉnh gần nhất + buffer 1-2%",
+      "tp_rule": "Target về trendline gốc hoặc vùng hỗ trợ major",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_019",
+      "name": "H4 Bearish Setup - No Long on Lower TF",
+      "category": "bias",
+      "priority": 1,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "short",
+      "conditions": [
+        "H4 RSI dưới 50, EMA(9,RSI) đã cắt xuống WMA(45,RSI)",
+        "WMA(45,RSI) H4 dốc xuống",
+        "Giá H4 dưới BL, BL H4 đang dốc xuống",
+        "BL Daily cũng dốc xuống (double confirmation bearish)",
+        "Giá reject từ BL khi test từ dưới lên"
+      ],
+      "action": "Bias toàn bộ về SHORT. KHÔNG trade long trên bất kỳ TF nhỏ hơn khi H4 bearish. Short khi giá reject BL từ dưới, RSI curl xuống từ 45-50",
+      "sl_rule": "SL trên đỉnh rejection candle hoặc trên BL + buffer 0.5-1%",
+      "tp_rule": "TP1 khi RSI H4 về 35-40 (chốt 50%). TP2 khi RSI chạm 30 (chốt 30%). Giữ 20% nếu downtrend mạnh",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_020",
+      "name": "RSI EMA9 Cross = Price Movement Confirmation",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H",
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "RSI vượt lên trên EMA(9,RSI) = price breakout resistance sắp xảy ra",
+        "RSI xuống dưới EMA(9,RSI) = price thủng support sắp xảy ra",
+        "EMA9 là leading indicator cho price movement",
+        "WMA45 là midline: RSI trên WMA45 = bullish momentum, dưới = bearish",
+        "3 đường stack đúng thứ tự (RSI > EMA9 > WMA45) = strong trend confirmation"
+      ],
+      "action": "Dùng RSI cross EMA9 như xác nhận sớm cho price action. Long khi RSI > EMA9 > WMA45 stack đẹp. Short khi RSI < EMA9 < WMA45",
+      "sl_rule": "Long: exit khi RSI cắt xuống dưới EMA9 bền vững. Short: exit khi RSI cắt lên trên EMA9",
+      "tp_rule": "Hold khi stack đúng thứ tự, thoát khi stack bị phá",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_021",
+      "name": "Position Sizing và Risk Management",
+      "category": "risk",
+      "priority": 1,
+      "timeframes": [
+        "4H",
+        "1D"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Max risk per trade: 5-7% tổng tài khoản",
+        "Reward/Risk tối thiểu ≥1:1 trước khi entry",
+        "Bắt đáy rủi ro cao (trap/oversold extreme): vol 10-15% max",
+        "Entry form rõ khung lớn (H4/D confirmed): vol 30-40%",
+        "Trong consolidation/tam giác: vol 20% chia 4-5 lần",
+        "Tổng alt position không quá 50-60% vốn",
+        "Size = Risk tài khoản muốn mất / khoảng cách SL tính bằng %"
+      ],
+      "action": "Tính size theo công thức: Size = (Risk% x Account) / SL Distance%. Không vượt max risk. Giảm size khi uncertainty cao",
+      "sl_rule": "Luôn đặt SL từ khi entry. Kéo SL lên entry khi có gain đủ lớn. Tối thiểu giữ 10-25% position để gồng sóng lớn",
+      "tp_rule": "Chốt dần: 50% tại TP1, 25% tại TP2, 25% để gồng với trailing SL. Không TP hết một lần",
+      "confidence": 0.95,
+      "codeable": true
+    },
+    {
+      "id": "rule_022",
+      "name": "Break-Even Stop Loss - Bảo Vệ Vốn Khi Có Lời",
+      "category": "risk",
+      "priority": 1,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Đã vào lệnh và giá chạy có lời đáng kể (≥2-3% từ entry)",
+        "Muốn hold tiếp nhưng cần bảo vệ vốn",
+        "Chưa có tín hiệu exit rõ từ RSI hoặc BL",
+        "Đang trong strong trend, chưa muốn thoát"
+      ],
+      "action": "Đặt Stop Market Sell (Reduce Only=True) tại entry price. Lock vốn, tiếp tục hold không có rủi ro thua lỗ",
+      "sl_rule": "Stop Market/Sell, Reduce Only=True, Condition: Mark Price ≤ Entry Price",
+      "tp_rule": "Không đặt TP cứng sau khi đặt break-even. Tiếp tục hold theo signal. Scale out khi RSI overbought",
+      "confidence": 0.93,
+      "codeable": true
+    },
+    {
+      "id": "rule_023",
+      "name": "Avoid Revenge Trading và FOMO Control",
+      "category": "risk",
+      "priority": 2,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Đã cắt lỗ lệnh vừa rồi và muốn vào ngay lệnh ngược lại",
+        "Tâm lý muốn gỡ lỗ ngay (revenge trading)",
+        "Cảm thấy FOMO khi miss con sóng lớn",
+        "Sau chuỗi 2-3 lệnh thua liên tiếp"
+      ],
+      "action": "Không đánh ngược lại ngay sau khi cắt lỗ. Reset hoàn toàn tư duy. Nếu FOMO: vào vol nhỏ 5-10% để test tâm lý. Nếu thua 2-3 lần liên tiếp: dừng trade trong ngày",
+      "sl_rule": "Lệnh FOMO: SL cực chặt 1-2%, thua thì nghỉ. Lệnh revenge: KHÔNG VÀO",
+      "tp_rule": "Chốt non sau chuỗi thua để lấy lại cảm giác thắng. Restart với size nhỏ",
+      "confidence": 0.92,
+      "codeable": false
+    },
+    {
+      "id": "rule_024",
+      "name": "Không Trade Khi Không Rõ Setup",
+      "category": "risk",
+      "priority": 1,
+      "timeframes": [
+        "1D",
+        "4H",
+        "1H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Khung lớn yếu/không rõ xu hướng (RSI nhiễu, BL phẳng)",
+        "Khung bé và khung lớn mâu thuẫn nhau",
+        "Sóng bất thường xuất hiện, không đếm được pattern",
+        "Market đang cò cưa giữa hỗ trợ và kháng cự không rõ ràng",
+        "Volume quá thấp, không có catalyst"
+      ],
+      "action": "Đứng ngoài. Không có lệnh cũng là một trạng thái trade hợp lệ. Không buộc phải vào lệnh khi không rõ setup",
+      "sl_rule": "N/A - không vào lệnh",
+      "tp_rule": "N/A - không vào lệnh",
+      "confidence": 0.95,
+      "codeable": false
+    },
+    {
+      "id": "rule_025",
+      "name": "BTC Correlation - Đồng Bộ SL Altcoin với BTC",
+      "category": "risk",
+      "priority": 3,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Altcoin có tương quan cao với BTC",
+        "BTC đang ở vùng SL quan trọng",
+        "Altcoin và BTC thường dump/pump gần như cùng lúc",
+        "BTC RSI xấu đi = altcoin sẽ theo"
+      ],
+      "action": "Set SL altcoin tại mức giá altcoin tương ứng với thời điểm BTC hit SL level của BTC. Không set SL quá chặt cho altcoin khi BTC chưa break",
+      "sl_rule": "SL altcoin = giá altcoin tại thời điểm BTC vừa chạm SL level BTC. Monitor BTC để out nếu BTC hit SL",
+      "tp_rule": "TP altcoin theo RSI form altcoin, không chờ BTC TP",
+      "confidence": 0.82,
+      "codeable": true
+    },
+    {
+      "id": "rule_026",
+      "name": "Fibonacci Retracement - Xác Định Vùng Entry",
+      "category": "filter",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "1D"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Vẽ Fibonacci từ đáy lên đỉnh (uptrend) hoặc đỉnh xuống đáy (downtrend)",
+        "Level 0.3, 0.5, 0.618 là vùng support/resistance mạnh",
+        "Sóng điều chỉnh thường về Fibo 0.5 (midpoint) sau nhịp tăng mạnh",
+        "RSI spike từ 20 lên 70 liên tục = expect pullback về Fibo 0.5",
+        "Entry long tại Fibo 0.3-0.5 nếu H4 form curl lên và giá giữ level"
+      ],
+      "action": "Dùng Fibonacci làm zone entry, không làm exact price. Long tại Fibo 0.3-0.5 khi có RSI curl confirm. Short tại Fibo retest sau breakdown",
+      "sl_rule": "Long tại Fibo: SL dưới Fibo level entry + 1-2 nến. Short: SL trên Fibo level entry",
+      "tp_rule": "Long: TP tại Fibo 0 (đỉnh cũ) hoặc extension 1.272/1.618. Short: TP tại Fibo level thấp hơn",
+      "confidence": 0.83,
+      "codeable": true
+    },
+    {
+      "id": "rule_027",
+      "name": "RSI Divergence - Higher Low = Bullish Bias",
+      "category": "bias",
+      "priority": 2,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI hiện tại tạo đáy cao hơn (higher low) so với đáy RSI trước đó",
+        "Giá có thể đang ở mức tương đương hoặc thấp hơn (classic bullish divergence)",
+        "RSI đang trong vùng 30-50, chưa overbought",
+        "Ít nhất 2 cụm RSI đáy để so sánh rõ ràng",
+        "BL bắt đầu flatten hoặc hướng lên sau downtrend dài"
+      ],
+      "action": "Bias long mạnh khi RSI tạo higher low trong khi giá không tạo higher high (divergence). Chờ RSI curl lên xác nhận để entry",
+      "sl_rule": "SL dưới đáy giá tương ứng với đáy RSI cũ (thấp hơn)",
+      "tp_rule": "TP khi RSI tiếp cận 70-75 hoặc kháng cự khung lớn",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_028",
+      "name": "RSI Pullback về WMA45 - Re-entry Long Continuation",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "12H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Uptrend đang diễn ra: BL dốc lên, giá trên BL",
+        "RSI pullback từ vùng cao (60-70) về test WMA(45,RSI) hoặc EMA(9,RSI)",
+        "RSI chạm WMA45 nhưng KHÔNG break dưới WMA45",
+        "RSI bắt đầu curl lên từ vùng test WMA45",
+        "Giá không tạo lower low tương ứng (price holds higher low)",
+        "Volume giảm trong pullback, tăng lại khi bounce"
+      ],
+      "action": "Re-entry long khi RSI test WMA45 và curl lên trong uptrend. Đây là pullback opportunity trong trend continuation",
+      "sl_rule": "SL dưới đáy nến reversal tại điểm test WMA45 hoặc dưới BL",
+      "tp_rule": "TP tại đỉnh swing cũ hoặc khi RSI chạm 70 lại",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_029",
+      "name": "Elliott Wave Awareness - Đếm Sóng Đơn Giản",
+      "category": "bias",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Xác định 1-2 bước sóng gần nhất, không tính xa",
+        "Sóng 1-2-3-4-5: sóng 3 là impulse mạnh nhất, sóng 5 thường yếu hơn sóng 3",
+        "Sóng 2 không được về dưới đáy sóng 1",
+        "Sóng 4 không được về vào vùng sóng 1",
+        "RSI xác nhận sóng: sóng 3 RSI >70, sóng 5 RSI yếu hơn sóng 3 (divergence)",
+        "Ở đáy sóng 2/4: tìm long. Ở đỉnh sóng 3/5: cảnh giác exit"
+      ],
+      "action": "Dùng wave count để định hướng: đáy sóng 2 → long sóng 3. Đáy sóng 4 → long sóng 5. Đỉnh sóng 5 + RSI divergence → exit/short",
+      "sl_rule": "Long sóng 3: SL dưới đáy sóng 2. Long sóng 5: SL dưới đáy sóng 4",
+      "tp_rule": "Sóng 3: target 1.618x sóng 1. Sóng 5: target 0.618-1.0x sóng 1 từ đáy sóng 4",
+      "confidence": 0.82,
+      "codeable": true
+    },
+    {
+      "id": "rule_030",
+      "name": "Trap Required Before Entry - Không Entry Khi Chưa Có Trap",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "H4 bullish mạnh (MA xếp đẹp, giá trên BL)",
+        "H1 PHẢI có trap (false breakdown) trước khi entry long",
+        "Trap = false break xuống hoặc wick dump dài rồi đảo ngược nhanh",
+        "Không có trap trên H1 = KHÔNG ENTRY dù H4 đẹp",
+        "Trap xác nhận khi nến H1 đóng cửa lại trên đáy trap"
+      ],
+      "action": "CHỜ trap xuất hiện trên H1 trước khi entry long. Breakout mạnh không có trap = skip (FOMO risk cao)",
+      "sl_rule": "SL dưới đáy trap candle",
+      "tp_rule": "Target swing high tiếp theo sau trap",
+      "confidence": 0.9,
+      "codeable": true
+    },
+    {
+      "id": "rule_031",
+      "name": "DCA Strategy - Mua Dần Trên VWAP Weekly",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "30M",
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Uptrend tổng thể xác nhận (BL dốc lên, giá trên VWAP W)",
+        "Giá pullback về vùng hỗ trợ nhưng vẫn TRÊN VWAP Weekly",
+        "BL đang nghiêng lên hoặc flat (không dốc xuống)",
+        "RSI pullback về vùng 40-50 tại điểm DCA",
+        "Chưa có lệnh mua tại vùng giá này (không buy double tại cùng zone)",
+        "VWAP Weekly là ngưỡng cứng: nếu đóng cửa dưới = dừng DCA"
+      ],
+      "action": "Buy từng phần khi giá pullback về BL/support vẫn trên VWAP W. Không buy thêm tại cùng vùng giá đã mua trước đó",
+      "sl_rule": "SL chung dưới VWAP Weekly. Close dưới VWAP W = cắt lỗ toàn bộ DCA",
+      "tp_rule": "Giữ tất cả lệnh DCA khi trend còn mạnh. TP chính tại VWAP 12M hoặc resistance major",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_032",
+      "name": "VWAP 12M - TP Tối Quan Trọng cho Swing Lớn",
+      "category": "exit",
+      "priority": 2,
+      "timeframes": [
+        "1D"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Đang có lệnh long swing từ vùng thấp",
+        "Giá tiếp cận VWAP 12 tháng từ dưới lên",
+        "VWAP 12M đang dốc xuống (resistance mạnh lịch sử)",
+        "RSI Daily đang trong vùng overbought hoặc tiếp cận 70",
+        "Đây là kháng cự tối quan trọng trên khung lớn"
+      ],
+      "action": "Cân nhắc chốt lời 50-70% khi giá tiếp cận VWAP năm (12M). Giữ 30% nếu có volume spike xác nhận breakout",
+      "sl_rule": "Nếu giữ phần còn lại: trailing SL theo BL Daily",
+      "tp_rule": "TP chính = vùng VWAP 12M. TP2 nếu breakout = measured move tiếp theo",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_033",
+      "name": "3-Step Entry System M15 - RSI Extreme + Curl + Trap",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "15M"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Bước 1: RSI đạt extreme zone (>70 cho short setup, <30 cho long setup)",
+        "Bước 2: RSI curl ngược chiều từ extreme, EMA(9,RSI) bắt đầu cross WMA(45,RSI)",
+        "Bước 3: Giá tạo false breakout (trap) vượt key level rồi đảo chiều",
+        "L/S indicator W và D phải align với hướng trade",
+        "BL M15 đang hướng theo chiều trade",
+        "Cả 3 bước phải hoàn thành, không skip bước nào"
+      ],
+      "action": "Entry sau khi đủ 3 bước. Đây là setup M15 chất lượng cao nhất. Long sau 3 bước trap xuống. Short sau 3 bước trap lên",
+      "sl_rule": "SL bên ngoài wick trap candle (dưới wick cho long, trên wick cho short)",
+      "tp_rule": "TP tại BL hoặc L/S level trên TF cao hơn",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_034",
+      "name": "Multi-Bottom BL Touch - Accumulation Entry Zone",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Giá chạm BL lần 1: bounce",
+        "Giá pullback lần 2 chạm BL: bounce thứ 2 (xác nhận BL là support)",
+        "Lần 3 chạm BL (nếu có): accumulation zone mạnh nhất",
+        "Mỗi lần chạm BL: volume tăng và RSI bounce",
+        "Sau lần chạm cuối: breakout mạnh trên resistance với volume spike lớn",
+        "BL đang upsloping trong toàn bộ quá trình"
+      ],
+      "action": "Buy tại lần chạm BL thứ 2 hoặc 3 khi có bounce confirmation (nến đảo chiều + RSI curl). Lần chạm nhiều = xác nhận BL support mạnh",
+      "sl_rule": "SL dưới BL (close dưới BL = setup invalid)",
+      "tp_rule": "TP tại resistance trước đó. Giữ đến khi RSI vượt 70",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_035",
+      "name": "Ascending Triangle / Channel - Long tại Lower Trendline",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Ascending channel rõ ràng: higher highs + higher lows",
+        "Hoặc ascending triangle: flat resistance + rising support",
+        "Giá chạm lower trendline/support line của pattern",
+        "Tại điểm chạm: nến bullish reversal (pin bar, engulfing, hammer)",
+        "Volume giảm trong consolidation, tăng khi bounce từ lower trendline",
+        "Uptrend intact: BL dốc lên, RSI không breakdown"
+      ],
+      "action": "Long khi giá test lower trendline với reversal candle confirmation",
+      "sl_rule": "SL dưới lower trendline (close dưới trendline = pattern invalid)",
+      "tp_rule": "TP tại upper trendline hoặc flat resistance. TP2 tại measured move (chiều cao pattern)",
+      "confidence": 0.82,
+      "codeable": true
+    },
+    {
+      "id": "rule_036",
+      "name": "Wyckoff Accumulation - Spring + Breakout Entry",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Spike dump mạnh với volume spike đỏ cực lớn (Selling Climax)",
+        "Sau dump, giá consolidate trong vùng hẹp (volume thấp)",
+        "RSI bounce từ extreme low, tạo higher lows",
+        "Giá giữ trên đáy spike (Spring không bị phá)",
+        "Giá consolidate dài trên điểm spring, test resistance nhiều lần",
+        "Breakout từ consolidation với volume spike xanh"
+      ],
+      "action": "Entry long sau khi giá consolidate trên spring và breakout xác nhận bằng volume",
+      "sl_rule": "SL dưới đáy spring (điểm spike dump thấp nhất)",
+      "tp_rule": "TP tại measured move = chiều cao từ spring đến top của trading range",
+      "confidence": 0.8,
+      "codeable": true
+    },
+    {
+      "id": "rule_037",
+      "name": "Trendline Entry Long - Test Support + Nến Xác Nhận",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "1H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Uptrend với ascending trendline (nối ít nhất 2 đáy higher)",
+        "BL dốc lên (bullish BL) xác nhận uptrend",
+        "Giá pullback test trendline support từ trên",
+        "Tại trendline: xuất hiện nến bullish reversal (pin bar, bullish engulfing, hammer)",
+        "Giá vẫn trên BL 1H (BL không bị phá)",
+        "RSI không dưới 30 (nếu dưới 30 là oversold extreme setup)"
+      ],
+      "action": "Long ngay sau khi nến bullish reversal đóng cửa tại trendline support",
+      "sl_rule": "SL dưới đáy nến reversal VÀ dưới đường trendline support (double confirmation). Nếu close dưới trendline = exit",
+      "tp_rule": "TP tại đỉnh swing gần nhất hoặc resistance horizontal 1H",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_038",
+      "name": "False Breakout Short - RSI Yếu + Rejection",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "1H"
+      ],
+      "direction": "short",
+      "conditions": [
+        "Giá spike lên phá resistance nhưng RSI không vượt WMA(45,RSI)",
+        "Hoặc RSI vượt 70 nhưng yếu hơn lần trước (bearish divergence)",
+        "Nến đóng cửa dưới resistance với wick dài phía trên (rejection)",
+        "EMA(9,RSI) bắt đầu curl xuống hoặc cắt xuống WMA45",
+        "Giá dưới BL Daily đang dốc xuống (bias short)",
+        "Volume khi spike lên thấp hơn volume trước (weak move)"
+      ],
+      "action": "Short sau khi xác nhận false breakout: giá về dưới resistance với nến bearish confirmation",
+      "sl_rule": "SL trên đỉnh wick false breakout candle (cao hơn spike)",
+      "tp_rule": "TP tại BL 1H hoặc support gần nhất bên dưới",
+      "confidence": 0.83,
+      "codeable": true
+    },
+    {
+      "id": "rule_039",
+      "name": "RSI H4 Cooldown - Chờ Reset Trước Long Tiếp",
+      "category": "filter",
+      "priority": 2,
+      "timeframes": [
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI H4 vừa đạt ~70 rồi bắt đầu curl xuống",
+        "Giá H4 sideway sau đợt tăng mạnh (RSI đang hạ nhiệt)",
+        "RSI H4 cần về vùng 50-55 để reset về trung tính",
+        "Giá giữ được vùng ngang trong quá trình RSI hạ nhiệt (không tụt mạnh)",
+        "Volume giảm trong quá trình cooling down"
+      ],
+      "action": "Chờ RSI H4 hạ nhiệt về vùng 50-55 trong khi giá sideway. Không long mới trong giai đoạn hạ nhiệt. Đây là time correction không phải price crash",
+      "sl_rule": "Nếu giá tụt mạnh dưới BL H4 trong quá trình cooling = setup fail, không entry tiếp",
+      "tp_rule": "Sau khi RSI H4 reset và giá giữ support → tìm entry long tiếp theo với setup fresh",
+      "confidence": 0.88,
+      "codeable": true
+    },
+    {
+      "id": "rule_040",
+      "name": "Multi-TF Trade Management - TP Sóng Nhỏ, Hold Sóng Lớn",
+      "category": "exit",
+      "priority": 2,
+      "timeframes": [
+        "15M",
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "Đang có position chạy lời đáng kể",
+        "M15 RSI ở sóng 5 (giai đoạn cuối) hoặc tạo overbought/oversold",
+        "H1 bắt đầu có dấu hiệu yếu (RSI curl ngược chiều từ 65-70)",
+        "H4 RSI còn room chạy (chưa tạo divergence hay chưa đến 70)",
+        "Chưa chạm kháng cự lớn của H4/D1"
+      ],
+      "action": "TP một phần khi M15 ở sóng 5 hoặc H1 yếu. Giữ phần lớn chờ H4 target. Scale out theo từng sóng nhỏ",
+      "sl_rule": "Trailing SL theo swing H1. Kéo SL lên entry ngay sau khi chốt TP đầu tiên",
+      "tp_rule": "TP1 (30-50%): M15 sóng 5 hoặc H1 curl. TP2 (25%): H4 RSI tiếp cận 70. Giữ 25% với trailing SL",
+      "confidence": 0.87,
+      "codeable": true
+    },
+    {
+      "id": "rule_041",
+      "name": "Hold Position Không Exit Sớm Khi Trend Mạnh",
+      "category": "exit",
+      "priority": 2,
+      "timeframes": [
+        "1H",
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Long position trong strong uptrend",
+        "Không có reversal signal trên H1 (không RSI bearish curl)",
+        "H4 RSI chưa đạt overbought (chưa đến 70)",
+        "BL H4 vẫn dốc lên và giá trên BL",
+        "Không có bearish divergence trên H4",
+        "Chưa chạm major resistance"
+      ],
+      "action": "HOLD toàn bộ vị thế. Không exit sớm vì sợ. Dùng mental trailing stop theo H1 structure, không hard TP khi trend mạnh",
+      "sl_rule": "Exit 30% khi H1 structure breakdown (RSI H1 cắt xuống dưới 50 bền vững). Giữ 70% cho move lớn hơn",
+      "tp_rule": "Scale out tại key levels (round numbers, major resistance). Full exit khi H4 RSI divergence hoặc bearish cross",
+      "confidence": 0.87,
+      "codeable": true
+    },
+    {
+      "id": "rule_042",
+      "name": "Trend Line Breakout Trendline 4H + 1D Confluence",
+      "category": "entry",
+      "priority": 3,
+      "timeframes": [
+        "4H",
+        "1D"
+      ],
+      "direction": "long",
+      "conditions": [
+        "Có descending trendline rõ ràng trên cả 4H và 1D",
+        "Giá breakout lên trên trendline 4H với volume tăng",
+        "Giá tiếp cận hoặc breakout trendline 1D",
+        "BL 4H hướng lên hoặc flat (không dốc xuống)",
+        "RSI trong xu hướng tăng, trên EMA9",
+        "Volume spike xác nhận breakout không phải false"
+      ],
+      "action": "Vào long khi breakout confluent cả trendline 4H và 1D - đây là confluence mạnh nhất cho long",
+      "sl_rule": "SL dưới trendline vừa breakout (4H trendline). Close dưới trendline = exit",
+      "tp_rule": "TP theo BL slope và major resistance 1D. Trail stop theo BL 4H",
+      "confidence": 0.87,
+      "codeable": true
+    },
+    {
+      "id": "rule_043",
+      "name": "H4 RSI Accumulation Near-30 - Long Setup Khung Lớn",
+      "category": "entry",
+      "priority": 2,
+      "timeframes": [
+        "4H"
+      ],
+      "direction": "long",
+      "conditions": [
+        "RSI H4 chạm hoặc tiệm cận vùng 30 (oversold)",
+        "RSI tạo double bottom hoặc higher low tại vùng 30-35 (hidden bullish divergence)",
+        "Giá consolidation lâu (giữ giá, không dump mạnh thêm)",
+        "Volume giảm dần trong quá trình RSI ở vùng thấp (selling exhaustion)",
+        "WMA(45,RSI) và EMA(9,RSI) đều ở vùng thấp 30-45 (tập trung)",
+        "BL H4 bắt đầu flatten từ downtrend"
+      ],
+      "action": "Đây là vùng tích lũy để LONG theo sóng H4 lớn. Chờ RSI curl từ 30-35 với EMA9 cắt WMA45. Entry nhỏ trước, add khi confirmed",
+      "sl_rule": "SL dưới đáy consolidation hoặc dưới RSI 30 breakdown (giá phá đáy consolidation = invalid)",
+      "tp_rule": "TP nhịp 1: RSI 50 (chốt 40%). TP nhịp 2: RSI 60-65 (chốt 35%). Giữ 25% nếu uptrend lớn",
+      "confidence": 0.83,
+      "codeable": true
+    },
+    {
+      "id": "rule_044",
+      "name": "Monthly VWAP Bands - Xác Định Bias Dài Hạn",
+      "category": "bias",
+      "priority": 2,
+      "timeframes": [
+        "15M",
+        "1H",
+        "4H"
+      ],
+      "direction": "both",
+      "conditions": [
+        "VWAP Monthly có 3 đường: Upper band (hồng/đỏ), Middle (xanh dương), Lower band (xanh lá)",
+        "Giá trên Middle VWAP Monthly = Bias LONG",
+        "Giá dưới Middle VWAP Monthly = Bias SHORT",
+        "Upper band = vùng kháng cự/TP cho long",
+        "Lower band = vùng hỗ trợ/TP cho short",
+        "VWAP Monthly bị reject nhiều lần = resistance rất mạnh, không long bên dưới"
+      ],
+      "action": "Xác định bias dài hạn theo vị trí giá vs Monthly VWAP middle. Chỉ trade theo bias này",
+      "sl_rule": "Long: SL dưới Middle VWAP Monthly. Short: SL trên Middle VWAP Monthly",
+      "tp_rule": "Long: TP tại Upper VWAP band. Short: TP tại Lower VWAP band",
+      "confidence": 0.85,
+      "codeable": true
+    },
+    {
+      "id": "rule_045",
+      "name": "H4 RSI Above 80 Short Bias + Consolidation Triangle",
+      "category": "bias",
+      "priority": 3,
+      "timeframes": [
+        "4H"
+      ],
+      "direction": "short",
+      "conditions": [
+        "RSI H4 đạt đỉnh trên 80, tạo peak 1",
+        "RSI pullback tạo peak 2 thấp hơn peak 1 (bearish divergence rõ ràng)",
+        "EMA(9,RSI) bắt đầu cắt xuống WMA(45,RSI)",
+        "WMA(45,RSI) bắt đầu cong xuống",
+        "Giá tạo consolidation triangle sau rally dài",
+        "Volume giảm trong consolidation (distribution)"
+      ],
+      "action": "Chuyển sang SHORT bias khi RSI H4 tạo double peak divergence và bearish cross. Thoát long, chuẩn bị short",
+      "sl_rule": "Short: SL trên đỉnh triangle consolidation hoặc trên swing high gần nhất",
+      "tp_rule": "TP tại BL H4 hoặc về vùng RSI H4 = 40-50. Extended TP khi RSI H4 về 30",
+      "confidence": 0.85,
+      "codeable": true
+    }
+  ]
+}

@@ -4,7 +4,7 @@ File đã cập nhật: `Mentor_RSI_MTF_v1.mq5`
 
 ## Bàn giao nhanh cho Codex trên Windows - đọc phần này trước
 
-Cập nhật trạng thái: `2026-07-16`. Phần từ mục `Đã triển khai` trở xuống là lịch sử đầy đủ. Khi tiếp tục nghiên cứu, không cần khởi động lại từ V1 hoặc chạy lại toàn bộ preset cũ; hãy dùng trạng thái khóa dưới đây.
+Cập nhật trạng thái: `2026-07-18`. Phần từ mục `Đã triển khai` trở xuống là lịch sử đầy đủ. Khi tiếp tục nghiên cứu, không cần khởi động lại từ V1 hoặc chạy lại toàn bộ preset cũ; hãy dùng trạng thái khóa dưới đây.
 
 ### Trạng thái khóa hiện tại
 
@@ -24,6 +24,25 @@ Cập nhật trạng thái: `2026-07-16`. Phần từ mục `Đã triển khai` 
 | V63 OOS 2025-2026 | `1.14` | `6.17%` | `278` | `0.97` | `1.27` | `4.13%` | `11.32%` |
 
 Kết luận khóa: V63 tăng PF tổng và vẫn giữ DD/concentration tốt, nhưng Long/Short còn lệch nên chưa thay V26. V26 tiếp tục là baseline duy nhất.
+
+### Khóa forward demo V26/V63
+
+- Chỉ forward demo, chưa chạy tiền thật. Runbook chính thức: `outputs/forward_demo_runbook.md`.
+- V26 forward baseline: `outputs/presets/79_v26_forward_demo.set`, MagicNumber `26072626`.
+- V63 forward challenger: `outputs/presets/80_v63_forward_demo.set`, MagicNumber `26072663`.
+- Hai preset dùng risk `0.5%`, telemetry/diagnostic/shadow audit chỉ đọc. `EntryQualityGateMode`, `VolatilityRiskMode` và `ShortWideSLRiskMode` đều khóa `OFF`.
+- EA xuất `Mentor_RSI_MTF_forward.csv`: contract specs, heartbeat/connectivity, spread-R, slippage-R, planned/actual risk, base/pyramid fill, order/risk reject, stop-modify và post-fill violation. Telemetry không được gọi từ signal/sizing/exit decision.
+- `tools/mt5/forward_gate.py` tự đánh giá stage 1, stage 2, micro-live và điều kiện V63 thay V26; `outputs/forward_weekly_log_template.csv` là mẫu theo dõi tuần.
+- Compile cuối: `0 errors, 0 warnings`.
+
+Smoke 2026-06, BTCUSD H1, 5,000 USD, 1:10, 100% real ticks đã khớp tuyệt đối audit OFF/ON:
+
+| Cặp | Net | PF | Equity DD | MT5 trades | Closed cycles | Execution diagnostics |
+|---|---:|---:|---:|---:|---:|---|
+| V26 vs V79 | `13.32` | `1.11` | `1.91%` | `13` | `11` | khớp tuyệt đối |
+| V63 vs V80 | `27.08` | `1.28` | `1.29%` | `14` | `11` | khớp tuyệt đối |
+
+V79/V80 không phải preset live-money. Mẫu chỉ được xem xét sau điều kiện đến sau `90 ngày + 60 cycles`, rồi `180 ngày + 120 cycles`; không được tối ưu lại trên dữ liệu cũ hoặc tăng risk để cứu PF.
 
 Lưu ý môi trường Windows:
 
@@ -54,7 +73,88 @@ Xác định bằng dữ liệu:
 
 Không được chuyển ngay sang reverse position hoặc đóng lệnh đang chạy chỉ vì có tín hiệu ngược. Đây là thay đổi lớn về exit/risk và chỉ được xem xét nếu shadow data chứng minh edge rõ ràng.
 
-### Thiết kế kỹ thuật V65-V66: shadow signal chỉ quan sát
+### V73-V74: audit trạng thái thị trường trước khi thêm filter live
+
+V73 (nền V26) và V74 (nền V63, chỉ làm robustness control) bổ sung đo lường audit-only vào core shadow CSV. Mọi input execution mới đều mặc định tắt; audit không gọi order, lot calculation, stop modification hay thay đổi armed/live state. Các trường mới của từng shadow event là:
+
+- `entry_atr_pct`, `entry_atr_rank`: ATR EntryTF(14) và percentile rank ATR của 480 nến đã đóng trước đó.
+- `entry_efficiency_20`: Kaufman-style price efficiency ratio của 20 nến đã đóng; dùng để đo chop độc lập với RSI chop filter hiện hữu.
+- `entry_spread_r`: `(ask-bid)/initial_risk_distance` tại thời điểm signal.
+- `initial_sl_atr`, cùng cờ `low_efficiency`, `high_spread_r`, `high_volatility`.
+
+Input được pre-register, không đưa vào optimizer:
+
+- `MarketStateShadowMode=MARKET_STATE_SHADOW_AUDIT`, `MarketStateATRRankBars=480`, `MarketStateEfficiencyBars=20`.
+- `MarketStateLowEfficiency=0.25`, `MarketStateHighATRRank=80`, `MaxEntrySpreadR=0.10`.
+- `EntryQualityGateMode` và `VolatilityRiskMode` luôn `OFF` trong V73/V74. Chúng chỉ là hook cho một preset execution nếu audit qua cổng; không được bật chỉ vì một fold đẹp.
+
+`tools/mt5/market_state_summary.py` chỉ tổng hợp event `completed=true` và `FLAT_*`; chia theo năm, chiều lệnh và các bucket cố định ER20 (`<0.25`, `0.25-0.50`, `>=0.50`), ATR rank (`<20`, `20-80`, `>=80`), spread/R (`<=0.03`, `0.03-0.10`, `>0.10`) và initial SL/ATR (`<=1`, `1-2`, `>2`). Runner tự sinh `market-state-summary.json` khi shadow CSV có các cột này.
+
+Cổng triển khai execution, theo thứ tự và không kết hợp filter:
+
+1. ER20 low veto là ứng viên đầu tiên; spread/R chỉ được xét nếu ER20 không qua; volatility half-risk chỉ được xét sau đó.
+2. Bucket bị loại phải có ít nhất 30 event hoàn tất ở cả aggregate Validation 2023-2024 và OOS 2025-2026, có hit `+1R` first kém nhóm còn lại ít nhất 8 điểm %, và median return 48 nến không dương ở cả hai aggregate; Long/Short luôn tách riêng.
+3. Preset execution V26 phải đạt Validation PF `>=1.11`, DD `<=6.55%`; OOS PF `>=1.10`, DD `<=5.25%`; hai chiều PF `>=1.00`, trades `>=80%` V26, largest-profit `<5%`, top-3 `<=12%`. Nếu không qua, V26 giữ nguyên.
+
+Compile V73/V74: `0 errors, 0 warnings`. Smoke V73 2026-06 với 100% real ticks khớp chính xác V26: Net Profit `13.32`, PF `1.11`, Equity DD `1.91%`, `13` report trades. V73 ghi `97` shadow event, `91` completed, `buildFail=0`; CSV chứa đủ trường market-state.
+
+Kết quả audit hoàn tất trên V26 với shadow-only (không chặn lệnh, không đổi risk):
+
+| Giai đoạn | PF | DD | Trades | FLAT completed events | Tick thực |
+|---|---:|---:|---:|---:|---:|
+| 2023 | 1.08 | 3.84% | 206 | 132 | 75% |
+| 2024 | 1.03 | 8.47% | 205 | 239 | 100% |
+| 2025 | 0.99 | 5.79% | 229 | 313 | 100% |
+| 2026 H1 | 1.14 | 4.98% | 100 | 108 | 100% |
+
+Lần chạy 2024 đầu tiên tạo report placeholder không có dữ liệu Expert nên bị loại; `2024_rerun` là report hợp lệ dùng trong bảng và tổng hợp. Trên `792` FLAT completed events trong `backtests/v73_market_state_aggregate_2023_2026.json`, không có filter nào qua cổng audit:
+
+- Không bật ER20 low-efficiency veto: ER thấp vẫn có lợi thế dương cho Long ở cả validation và OOS; Short lại đổi tương quan giữa hai fold. Một ngưỡng chung sẽ loại cả tín hiệu tốt.
+- Không bật spread-to-risk veto: vùng spread `>0.10R` chỉ có 3 mẫu ở validation và 0 ở OOS, không đủ dữ liệu để xác nhận.
+- Không bật high-ATR half-risk: nhóm ATR rank cao không cho suy giảm edge nhất quán theo chiều lệnh và giữa các fold.
+
+Không tạo preset execution mới; `EntryQualityGateMode` và `VolatilityRiskMode` tiếp tục `OFF`. V26 vẫn là baseline, còn V73/V74 chỉ là preset audit cho các vòng nghiên cứu sau.
+
+### V75-V78: kiểm chứng ba hướng tăng PF/lợi nhuận, không có preset live mới
+
+Vòng này khóa đúng một cấu hình cho mỗi giả thuyết và chạy riêng các fold 2023, 2024, 2025 và 2026-01-01 đến 2026-07-01, deposit `5,000 USD`, BTCUSD H1, real ticks khi dữ liệu cho phép. Không quét threshold hoặc multiplier.
+
+**V75 — Short có Initial SL lớn hơn 2 ATR dùng half-risk.** EA có input `ShortWideSLRiskMode`, `ShortWideSLATRThreshold` và `ShortWideSLRiskMultiplier`, tất cả mặc định `OFF`; mode chỉ áp dụng cho lệnh Short và giữ nguyên SL, exit, pyramid và điều kiện entry. Preset V75 cố định threshold `2.0 ATR`, multiplier `0.50`.
+
+| Fold | PF | DD | Net Profit | Trades | Kết luận |
+|---|---:|---:|---:|---:|---|
+| 2023 | `1.16` | `4.07%` | `+197.29` | 213 | Tốt riêng năm này |
+| 2024 | `0.83` | `12.07%` | `-299.20` | 241 | Loại rõ ràng |
+| 2025 | `1.00` | `5.98%` | `+4.43` | 236 | Không có edge đủ lớn |
+| 2026 H1 | `1.00` | `5.75%` | `-2.92` | 124 | Không có edge đủ lớn |
+
+V75 bị loại. Shadow cho thấy bucket Short SL rộng yếu theo forward return, nhưng giảm lot của các lệnh đó làm thay đổi tương tác một-position Long/Short; điều này không chuyển thành PF lệnh thực thi ổn định.
+
+**V76 — V63 risk-normalized `0.45%`.** Không đổi logic V63; chỉ đổi `RiskPerTradePct` từ `0.50%` xuống `0.45%`.
+
+| Fold | PF | DD | Net Profit | Trades | Kết luận |
+|---|---:|---:|---:|---:|---|
+| 2023 | `1.16` | `5.18%` | `+193.25` | 190 | Có edge |
+| 2024 | `0.99` | `4.53%` | `-13.40` | 168 | Không đạt PF |
+| 2025 | `1.10` | `5.53%` | `+145.57` | 199 | Long PF `0.89` |
+| 2026 H1 | `1.63` | `3.40%` | `+300.87` | 77 | Tốt nhưng ít mẫu |
+
+V76 cũng bị loại làm baseline/live candidate. Risk giảm không có tác động tuyến tính tại broker này: một số lệnh rơi dưới min-lot BTCUSD, làm thay đổi cả số lệnh và tương tác vị thế. Vì vậy không thể suy luận DD/lợi nhuận bằng cách nhân tỷ lệ risk từ V63.
+
+**V77-V78 — tách sleeve Long/Short.** V77 chỉ đóng gói lại long-only V60 đã có Validation/OOS; không chạy lại vì khác MagicNumber không thay đổi hành vi. V78 kiểm chứng phần chưa biết: Short độc lập từ logic V63.
+
+| Fold V78 Short-only | PF | DD | Net Profit | Trades | Kết luận |
+|---|---:|---:|---:|---:|---|
+| 2023 | `0.94` | `4.39%` | `-46.73` | 105 | Loại |
+| 2024 | `0.93` | `5.73%` | `-56.06` | 94 | Loại |
+| 2025 | `1.10` | `4.64%` | `+100.64` | 131 | Không bù hai fold Validation |
+| 2026 H1 | `2.58` | `1.85%` | `+354.81` | 44 | Mẫu ngắn, không đủ |
+
+Không xây portfolio engine Long/Short ở giai đoạn này. Short tốt trong V63 ghép là hiệu ứng của một base position đang chặn các setup khác, không phải một sleeve độc lập có edge. V26 tiếp tục là baseline duy nhất; V63 tiếp tục chỉ là candidate nghiên cứu. Các preset V75-V78 đều không phải preset live.
+
+Lần chạy V75 năm 2023 đầu tiên và một rerun từng sinh report placeholder `M0/1970`; chúng đã bị validator loại hoàn toàn. Chỉ các report đầy đủ Expert/Symbol/period, có real-tick quality và qua `report_summary.py --validate` mới xuất hiện trong các bảng trên.
+
+### Đã triển khai V65-V66: shadow signal chỉ quan sát
 
 Thêm input, mặc định tắt để preset cũ không đổi:
 
@@ -63,7 +163,7 @@ Thêm input, mặc định tắt để preset cũ không đổi:
 - `ShadowForwardBars=48`; các checkpoint cố định là 6/12/24/48 nến, không đưa thành dải optimize ở vòng đầu.
 - `ExportShadowSignalsCsv=true/false`.
 
-Tạo tracker shadow độc lập với `armedLongBars`, `armedShortBars`, fan tracker và trạng thái live. Không gọi `UpdateArmedState()` của live khi vị thế đang mở, vì điều này có thể thay đổi entry thật sau khi lệnh đóng. Audit ON và OFF bắt buộc tạo cùng một lịch sử lệnh thật.
+EA đã có tracker shadow độc lập với `armedLongBars`, `armedShortBars` và trạng thái live. Không gọi `UpdateArmedState()` của live khi vị thế đang mở, vì điều này có thể thay đổi entry thật sau khi lệnh đóng. Shadow audit V65/V66 được thiết kế cho các mode core `RSI_CROSS_EMA`, `RSI_ABOVE_EMA_AFTER_EXTREME` và `RSI_PULLBACK_CONTINUATION`; nếu bật audit cùng `RSI_FAN_STRUCTURE`, EA dừng khởi tạo để tránh ghi dữ liệu không tương đương. Audit ON và OFF bắt buộc tạo cùng một lịch sử lệnh thật.
 
 Mỗi nến EntryTF đã đóng, kể cả khi có vị thế, shadow engine phải:
 
@@ -72,7 +172,9 @@ Mỗi nến EntryTF đã đóng, kể cả khi có vị thế, shadow engine ph�
 3. Đánh giá Long và Short bằng cùng bias, regime, quality, chop và curl của preset đang test.
 4. Ghi một event khi signal chuyển từ false sang true; các nến signal tiếp tục true chỉ tăng `repeatBars`, không tạo event mới.
 5. Với mỗi event, lưu giá entry giả định theo bid/ask, InitialSL theo cùng swing logic và risk distance `1R`; tuyệt đối không tính lot hoặc gửi order.
-6. Theo dõi first-hit `+1R/-1R`, MFE_R, MAE_R và forward return đến hết 48 nến. Cho phép nhiều event shadow chồng nhau vì chúng chỉ là quan sát.
+6. Theo dõi first-hit `+1R/-1R` và MFE/MAE trên từng tick, forward return trên giá đóng nến đến hết 48 nến. Cho phép nhiều event shadow chồng nhau vì chúng chỉ là quan sát.
+
+Event chỉ được ghi khi tín hiệu đổi từ `false` sang `true`. Nếu signal còn đúng liên tiếp, `repeat_bars` của event đầu tiên tăng lên, không phát sinh event trùng. Event đạt `ShadowForwardBars` được ghi là `completed=true`; event nằm sát cuối kỳ test được flush với `completed=false` để không làm mất dấu vết, nhưng không dùng trong thống kê edge.
 
 CSV `Mentor_RSI_MTF_shadow_signals.csv` cần có tối thiểu:
 
@@ -94,10 +196,14 @@ return_6,return_12,return_24,return_48,completed
 
 Preset audit:
 
-- V65: V26 + `SHADOW_AUDIT_EVENTS`.
-- V66: V63 + `SHADOW_AUDIT_EVENTS`.
+- V65: `outputs/presets/65_v26_shadow_audit.set`, V26 + `SHADOW_AUDIT_EVENTS`.
+- V66: `outputs/presets/66_v63_shadow_audit.set`, V63 + `SHADOW_AUDIT_EVENTS`.
 
 V65/V66 chỉ là preset diagnostic; report trading của chúng phải khớp preset nền tương ứng. Không tối ưu shadow parameters.
+
+Mỗi lần chạy, file `Mentor_RSI_MTF_shadow_signals.csv` được MT5 ghi trong `MQL5/Files` của tester agent; `tools/mt5/backtest.sh` tự sao chép thành `shadow-signals.csv` và tạo `shadow-summary.json` trong thư mục result. Journal có thêm một dòng ngắn `DIAG_SUMMARY shadow source=OnTester`, gồm số event, Long/Short, `flatBoth`, `openSame`, `openOpposite`, completed và buildFail. `buildFail` phải bằng `0` trước khi dùng CSV.
+
+Dùng `python tools/mt5/shadow_summary.py <CSV-1> [CSV-2 ...] --output shadow-summary.json` để tổng hợp riêng các event `completed=true` theo năm, `side` và `conflict_type`. File JSON cho hit-rate `+1R` trước `-1R`, median MFE/MAE và mean/median return 6/12/24/48 nến; không phải report lợi nhuận thực thi.
 
 ### Cổng kiểm tra trước khi nghiên cứu priority
 
@@ -108,26 +214,98 @@ V65/V66 chỉ là preset diagnostic; report trading của chúng phải khớp p
 - Không dùng Development 2019-2022 để chọn priority vì máy hiện tại chỉ có `0% real ticks` cho đoạn này.
 - Report rỗng có Expert/Symbol trống, `M0/1970`, bars/ticks bằng 0, thiếu `Test passed` hoặc thiếu `DIAG_SUMMARY source=OnTester` phải bị loại.
 
-### Thiết kế V67-V70: chỉ tạo sau khi V65/V66 có đủ mẫu
+### Kết quả V65 và điều chỉnh hướng nghiên cứu
 
-Chỉ tạo các preset execution dưới đây nếu mỗi nhóm conflict quan trọng có ít nhất 50 event hoàn tất và shadow outcome dương, không phụ thuộc một năm:
+Smoke tháng 06/2026 giữa V26 audit tắt và V65 audit bật đã khớp tuyệt đối: Net Profit `13.32`, PF `1.11`, DD `1.91%`, `13` trades và toàn bộ diagnostic pyramid. V65 ghi `97` event, `91` completed, `buildFail=0`; vì vậy audit không làm nhiễu execution live.
 
-- V67: control `LONG_FIRST`, hành vi hiện tại.
-- V68: `SHORT_FIRST`, chỉ thay thứ tự khi đang flat và cả hai signal hợp lệ cùng nến.
-- V69: `REGIME_PRIORITY`; composite `>= +4` chọn Long, `<= -4` chọn Short, neutral giữ Long-first. Không đóng/reverse vị thế đang mở.
-- V70: `CONFLICT_SKIP`; khi flat và cả hai signal cùng hợp lệ thì không mở lệnh ở nến đó.
+Ba fold V65 đã hoàn tất:
 
-Không triển khai cơ chế reverse/defer đối với `OPEN_OPPOSITE_SIDE` trong V67-V70. Trước hết chỉ so sánh priority ở trạng thái flat để giữ blast radius nhỏ và không làm đổi exit/risk.
+| Fold | Real ticks | PF | DD | Shadow completed | Flat both | Open opposite |
+|---|---:|---:|---:|---:|---:|---:|
+| 2023 | 75% | `1.08` | `3.84%` | `996` | `0` | `216` |
+| 2024 | 100% | `1.03` | `8.47%` | `1,068` | `0` | `159` |
+| 2025 OOS | 100% | `0.99` | `5.79%` | `1,027` | `0` | `130` |
 
-Điều kiện để một priority candidate được giữ:
+`FLAT_BOTH` bằng `0` ở cả ba fold. Vì thế V67-V70 theo thứ tự Long-first/Short-first, regime tie-break hoặc skip cùng nến không có bề mặt tác động và **không được tạo**. Reverse tại `OPEN_OPPOSITE_SIDE` cũng bị loại: Short đối diện Long rất yếu trong Validation (`+1R` first `38.6%` năm 2023, `20.9%` năm 2024; return 48 nến lần lượt `-0.83R`, `-0.92R`), nhưng năm 2025 lại đảo dấu. Long đối diện Short cũng không ổn định theo median. Đây không phải edge có thể đưa vào execution.
 
-- Validation PF `>= 1.15`, OOS PF `>= 1.10`.
-- Equity DD `<= 8%`.
-- Long PF và Short PF tổng hợp đều `>= 1.05`; chênh lệch không quá `0.25`.
-- Trades tối thiểu `250` mỗi giai đoạn tổng và không dưới `75%` preset nền.
-- Largest/Gross `< 5%`, Top-3/Gross `< 12%`.
-- Không có năm đầy đủ PF dưới `0.95`.
-- `stopModifyFail=0`, `postFillViolation=0`.
+Điểm quan sát duy nhất đáng nghiên cứu tiếp là `OPEN_SAME_SIDE` Long: mean return 48 nến dương ở 2023 (`+1.11R`), 2024 (`+0.43R`) và 2025 (`+0.29R`). Tuy nhiên đây là raw continuation signal, chưa chứng minh được một lệnh add thực thi có edge vì chưa lọc theo trigger, stop chung, locked profit, min-lot, spread và margin của pyramid.
+
+### V71: audit Add1 đủ điều kiện, chưa đặt lệnh
+
+Vòng kế tiếp phải thêm `PyramidShadowMode=PYRAMID_SHADOW_OFF/PYRAMID_SHADOW_ADD1_AUDIT`, mặc định tắt. Khi một cycle pyramid đang hoạt động, audit ghi candidate khi base R và `PyramidSignal` cùng chiều kích hoạt, đồng thời lưu trạng thái của toàn bộ điều kiện đọc-thuần Add1:
+
+1. Cycle không recovery, chưa có Add1, `baseR >= Add1TriggerR`, DD tài khoản dưới ngưỡng và đủ khoảng cách nến.
+2. `PyramidSignal` cùng chiều đúng, spread không vượt `PyramidMaxSpreadR`.
+3. Tính stop chung giả định theo `Add1LockFloorR`, locked PnL sau reserve, risk add `Add1RiskR`, lot tối thiểu và margin. Không gọi `EnsurePyramidStop`, không gửi lệnh và không sửa SL live.
+4. Ghi `side`, base R, entry/sl giả định, locked PnL theo R, lý do fail gate, lot hợp lệ và outcome 1R/48 nến.
+
+Chỉ triển khai V72 execution nếu V71 có tối thiểu `50` Add1 eligible Long trên Validation, `30` trên OOS, hit `+1R` trước `-1R >= 55%`, mean và median return 48 nến dương ở cả Validation/OOS; Short phải qua cùng cổng riêng. Giữ nguyên `Add1RiskR=0.20`, không tăng lot/risk để ép số add.
+
+Nếu V71 cho thấy lot hợp lệ quá ít, kết luận giới hạn là quy mô vốn/min-lot của BTCUSD chứ không phải thiếu signal; không nới risk hay bỏ locked-profit gate.
+
+### Đã triển khai và kết thúc V71 trên Validation
+
+V71 đã được triển khai trong EA với preset `outputs/presets/71_v26_add1_eligibility_shadow_audit.set`. Audit chạy trước `ManageOpenPosition()` trên mỗi tick để thấy đúng thời điểm giá vượt `Add1TriggerR`, nhưng cache `PyramidSignal` theo nến H1 đã đóng. Mỗi base cycle chỉ ghi candidate Add1 đầu tiên, tránh biến dao động giá quanh trigger thành nhiều mẫu giả. Không gọi `EnsurePyramidStop`, không gửi order và không thay đổi state/risk/SL live. Runner tự lưu `pyramid-shadow-signals.csv` và `pyramid-shadow-summary.json`; dùng `tools/mt5/pyramid_shadow_summary.py` để gộp nhiều fold.
+
+| Fold V71 | Real ticks | Candidate cycle-unique | Eligible | Chặn lot | Chặn spread | Add1 live |
+|---|---:|---:|---:|---:|---:|---:|
+| 2023 | 75% | `6` | `4` | `1` | `1` | `4` |
+| 2024 | 100% | `10` | `1` | `9` | `0` | `1` |
+| Tổng Validation | hỗn hợp | `16` | `5` | `10` | `1` | `5` |
+
+Report V71 khớp report V26 ở cả 2023 và 2024, xác nhận audit không làm nhiễu execution. Tuy nhiên Validation chỉ có `5` candidate eligible, thấp hơn xa cổng `50`. Do đó V71 **dừng tại Validation**, không chạy OOS 2025 cho mục đích chọn pyramid execution và không tạo preset pyramid execution kế tiếp. Dữ liệu cho thấy giới hạn chính là min-lot BTCUSD với `Add1RiskR=0.20`, không phải bằng chứng để tăng risk hoặc nới locked-profit gate.
+
+## Nghiên cứu chất lượng entry/exit core RSI
+
+### Chẩn đoán entry từ shadow V65
+
+Đã bổ sung `tools/mt5/core_quality_summary.py` để phân tích riêng các shadow signal có `conflict_type=FLAT_*`, tức là những tín hiệu core thực sự có thể được mở khi tài khoản không có vị thế. Ba fold V65 2023, 2024 và 2025 cho `684` event hoàn tất. Công cụ chia tín hiệu theo bốn lát cắt cố định: khoảng cách tuyệt đối RSI-EMA9 (`0-1`, `1-3`, `>3`), vị trí RSI so với WMA45, RSI entry (`<45`, `45-55`, `>55`) và bucket regime D1/H4.
+
+Kết quả không cho phép đưa thêm filter live:
+
+- Long dưới WMA45 rất yếu trong 2025: `15` event, tỷ lệ đạt `+1R` trước `-1R` chỉ `20%`, mean return 48 nến `-0.69R`. Tuy nhiên 2024 cũng chỉ có `15` event và mean return `+0.34R`; mẫu quá nhỏ, không được dùng để chặn long.
+- Short dưới WMA45 có mẫu lớn hơn (`68`, `117`, `159`) nhưng mean return 48 nến lần lượt chỉ `+0.04R`, `-0.10R`, `+0.11R`. Đây không phải edge đủ ổn định để đổi điều kiện entry.
+- Long phía trên WMA45 có mean return 48 nến tốt ở 2023 (`+1.21R`) nhưng gần bằng 0 ở 2024/2025. Bucket RSI entry và khoảng RSI-EMA9 cũng đổi dấu giữa các năm.
+- Long neutral regime xấu ở 2024 (`42` event, mean return 48 nến `-0.54R`) nhưng không lặp ở 2025. Short neutral lại yếu ở 2023 và 2025 nhưng không tạo một ngưỡng hành động xuyên năm.
+
+Do đó không tạo filter ngưỡng mới, không thay `LongArmLevel`, `ShortArmLevel`, WMA45, bias, risk hoặc pyramid từ kết quả này. Chất lượng dữ liệu 2023 cũng chỉ `75% real ticks`, vì vậy các pattern chỉ có ở 2023 càng không đủ sức thuyết phục. Những CSV và JSON chẩn đoán nằm trong các thư mục `backtests/v65_shadow_*` và `backtests/v65_core_quality_2023_2025.json`.
+
+### V72: audit RSI exit, không can thiệp execution
+
+V72 được tạo để kiểm tra exit hiện tại trước khi đổi TP2, H4 exit, trailing hoặc directional profile. Input mới, mặc định tắt:
+
+- `CoreExitShadowMode=CORE_EXIT_SHADOW_RSI_AUDIT`.
+- `CoreExitShadowForwardBars=48`.
+- `ExportCoreExitShadowCsv`.
+
+Khi một điều kiện exit RSI đang được EA dùng xuất hiện trên nến H1 đã đóng, audit chỉ ghi nhận và theo dõi continuation theo chiều vị thế thêm 6/12/24/48 nến. `continuation R > 0` nghĩa là giữ phần vị thế đó sẽ tốt hơn exit tại thời điểm signal; `continuation R < 0` nghĩa là exit đã tránh được diễn biến bất lợi. Audit bao phủ:
+
+- `TP2_RSI`: partial TP2 sau TP1, không có pyramid add.
+- `H4_RSI`: đóng theo RSI H4 đảo chiều.
+- `SHORT_INVALIDATION`: chỉ khi tùy chọn invalidation đang bật.
+
+Audit chạy trước `ManageOpenPosition()` để nhìn thấy đúng signal trước khi EA đóng/partial close. Nó hỗ trợ cả netting và hedging group; trên hedging đọc base leg và initial risk của pyramid cycle. Audit không gọi `PositionClose`, `PositionModify`, `ClosePartial`, không sửa state TP1/TP2 và không tính lot. Mỗi reason chỉ được ghi tối đa một lần cho mỗi base position để tránh mẫu trùng.
+
+`DIAG_SUMMARY coreExitShadow` báo mode, event Long/Short, số `tp2`, `h4`, `invalidation`, completed và buildFail. `tools/mt5/backtest.sh` tự sao chép CSV thành `core-exit-shadow-signals.csv` và chạy `tools/mt5/core_exit_shadow_summary.py` để tạo `core-exit-shadow-summary.json`.
+
+Preset là `outputs/presets/72_v26_core_exit_rsi_audit.set`, nền đúng V26: BTCUSD H1, risk `0.5%`, HTF veto, ATR trailing `3.2`, start trailing `2.0R`, một Add1 `2.25R/0.20R/0.75R`. Chỉ bật audit exit; mọi tham số execution khác giữ như V26.
+
+Smoke test 2026-06-01 đến 2026-06-30, deposit 5,000 USD, 100% real ticks đã khớp V26 tuyệt đối: Net Profit `+13.32`, PF `1.11`, Equity DD `1.91%`, `13` report trades. Audit ghi `4` event (`2` TP2 long, `2` H4 short), completed `4`, buildFail `0`. Đây là xác minh instrumentation không làm thay đổi giao dịch thật, chưa phải bằng chứng để đổi exit.
+
+Kết quả V72 theo fold, tất cả report giữ đúng execution V26 và `buildFail=0`:
+
+| Fold | Real ticks | Net Profit | PF | DD | Report trades | Exit event hoàn tất |
+|---|---:|---:|---:|---:|---:|---:|
+| 2023 | 75% | `+115.53` | `1.08` | `3.84%` | `206` | `54` |
+| 2024 | 100% | `+40.47` | `1.03` | `8.47%` | `205` | `41` |
+| 2025 | 100% | `-15.68` | `0.99` | `5.79%` | `229` | `39` |
+| 2026-01-01 đến 2026-07-01 | 100% | `+116.87` | `1.14` | `4.98%` | `100` | `22` |
+
+Validation 2023-2024 có một gợi ý ban đầu ở `LONG/TP2_RSI`: `31` event, mean continuation 48 nến `+1.14R`, median `+0.17R`. Nhưng riêng 2024 median là `-0.84R`, vì một số runner lớn kéo mean dương. Các nhóm còn lại cũng không đủ mạnh: long H4 chỉ `28` event; short TP2 `23`; short H4 `13`.
+
+OOS 2025 đến 2026-07 đảo và làm yếu các dấu hiệu trên: long H4 có `14` event, mean/median continuation 48 nến `-0.24R/-0.58R`; long TP2 `14` event, `+0.94R/-0.23R`; short H4 `13` event, `+0.72R/+0.29R`; short TP2 `20` event, `+0.85R/+0.12R`. Nghĩa là các exit short có vẻ hữu ích trong Validation lại có xu hướng chốt runner quá sớm trên OOS, còn long không có hướng nhất quán. Mọi nhóm OOS đều không đạt đồng thời ngưỡng mẫu và điều kiện mean/median cùng dấu.
+
+Kết luận V72: **không thay TP2, H4 exit, short invalidation hoặc trailing**. Không tạo preset execution từ audit này. V26 giữ nguyên exit profile; V72 được giữ làm instrumentation cho các vòng sau. Điều cần nghiên cứu tiếp là chất lượng setup hoặc chọn vị thế trước entry, không phải săn một multiplier trailing hay RSI exit threshold mới.
 
 ### Dữ liệu Codex Windows cần trả lại
 

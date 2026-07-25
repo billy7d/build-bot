@@ -1,0 +1,64 @@
+{
+  "locked_at": "2026-07-18",
+  "status": "DEMO_FORWARD_ONLY_NO_REAL_MONEY",
+  "source": {
+    "path": "outputs/Mentor_RSI_MTF_v1.mq5",
+    "sha256": "cc62d5303b05e2a9ae0bdd933657e55b0c3346b0c9c230669b8f76b34087618e",
+    "compile_result": "0 errors, 0 warnings",
+    "local_ex5_reference_sha256": "23d3dfc164c10029ac2efa757d3e84ebb188a406df5ce4df2f53d2c39b7b0da8"
+  },
+  "presets": {
+    "V26_baseline": {
+      "path": "outputs/presets/79_v26_forward_demo.set",
+      "sha256": "ef8206f38b38c4f34b6bb155ea770684f67925ee3a05ad0dfe240150569e6aa6",
+      "magic_number": 26072626
+    },
+    "V63_challenger": {
+      "path": "outputs/presets/80_v63_forward_demo.set",
+      "sha256": "35d928550406f0b72a4fb706566fab8540ec7c0ea395a5cf101c53c5adcae322",
+      "magic_number": 26072663
+    }
+  },
+  "decision_gate": {
+    "path": "tools/mt5/forward_gate.py",
+    "sha256": "455be77fc4538fcdc0775c206a64d46102cdb4bb0f0c4811eff23c64131c4136"
+  },
+  "smoke_environment": {
+    "symbol": "BTCUSD",
+    "period": "H1",
+    "from": "2026-06-01",
+    "to": "2026-06-30",
+    "deposit_usd": 5000,
+    "leverage": "1:10",
+    "history_quality": "100% real ticks",
+    "contract_size": 1.0,
+    "volume_min": 0.01,
+    "volume_step": 0.01,
+    "tick_size": 0.01,
+    "tick_value": 0.01
+  },
+  "smoke_results": {
+    "V26": {
+      "audit_off": "backtests/forward_smoke_release_v26_off_202606",
+      "audit_on_final": "backtests/forward_smoke_release_v26_on_202606",
+      "summary_exact": true,
+      "execution_diagnostics_exact": true,
+      "net_profit": 13.32,
+      "profit_factor": 1.11,
+      "equity_drawdown_pct": 1.91,
+      "mt5_total_trades": 13,
+      "closed_cycles": 11
+    },
+    "V63": {
+      "audit_off": "backtests/forward_smoke_release_v63_off_202606",
+      "audit_on_final": "backtests/forward_smoke_release_v63_on_202606",
+      "summary_exact": true,
+      "execution_diagnostics_exact": true,
+      "net_profit": 27.08,
+      "profit_factor": 1.28,
+      "equity_drawdown_pct": 1.29,
+      "mt5_total_trades": 14,
+      "closed_cycles": 11
+    }
+  }
+}
