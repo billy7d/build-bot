@@ -1,0 +1,186 @@
+HANDOFF CHO CODEX TRÊN WINDOWS
+Forward demo BTCUSD: V26 baseline đối chứng V63
+Ngày tạo: 2026-07-26 | Chỉ DEMO, KHÔNG dùng tiền thật
+
+================================================================================
+1. MỤC TIÊU DUY NHẤT
+================================================================================
+
+Giúp tôi triển khai và vận hành Stage 1 forward demo trên laptop Windows.
+Không nghiên cứu chiến lược mới, không tối ưu lại, không thay đổi execution.
+
+Chạy đồng thời hai MetaTrader 5 độc lập, hai account Exness DEMO MT5 riêng:
+  - V26 = baseline duy nhất.
+  - V63 = challenger/đối chứng; không tự thay V26.
+
+Broker/server dự kiến: Exness-MT5Trial17.
+Symbol mục tiêu: BTCUSD H1 (phải xác nhận tên exact/specs từ broker).
+Vốn mô phỏng mỗi account: 5,000 USD.
+Leverage mỗi account: 1:10.
+Risk mỗi hệ thống: 0.5%.
+
+================================================================================
+2. FILE PHẢI ĐỌC TRƯỚC KHI HÀNH ĐỘNG
+================================================================================
+
+Repository đã được chép vào máy Windows, ví dụ D:\Trading\build-bot\.
+Đọc theo thứ tự này:
+
+  1. outputs\windows_laptop_stage1_setup.txt
+  2. outputs\forward_demo_runbook.md
+  3. outputs\forward_demo_lock_manifest.json
+  4. outputs\Mentor_RSI_MTF_v1.mq5
+  5. tools\mt5\forward_gate.py
+
+File checklist chính:
+  outputs\windows_laptop_stage1_setup.txt
+
+================================================================================
+3. BẢN KHÓA - KHÔNG ĐƯỢC THAY ĐỔI
+================================================================================
+
+EA source:
+  outputs\Mentor_RSI_MTF_v1.mq5
+  SHA-256:
+  cc62d5303b05e2a9ae0bdd933657e55b0c3346b0c9c230669b8f76b34087618e
+
+V26 FORWARD BASELINE:
+  outputs\presets\79_v26_forward_demo.set
+  MagicNumber=26072626
+  SHA-256=ef8206f38b38c4f34b6bb155ea770684f67925ee3a05ad0dfe240150569e6aa6
+
+V63 FORWARD CHALLENGER:
+  outputs\presets\80_v63_forward_demo.set
+  MagicNumber=26072663
+  SHA-256=35d928550406f0b72a4fb706566fab8540ec7c0ea395a5cf101c53c5adcae322
+
+Cả hai preset BẮT BUỘC giữ:
+  RiskPerTradePct=0.5
+  EntryQualityGateMode=0 (OFF)
+  VolatilityRiskMode=0 (OFF)
+  ShortWideSLRiskMode=0 (OFF)
+  ShadowSignalMode=1 (audit-only)
+  MarketStateShadowMode=1 (audit-only)
+  ExportDiagnosticsCsv=true
+  ExportForwardTelemetryCsv=true
+
+KHÔNG được:
+  - Tăng risk.
+  - Chỉnh ER20, ATR-rank, spread filter, SL/TP, trailing, pyramid, entry hoặc RSI threshold.
+  - Gộp V26/V63 vào một account/netting account.
+  - Chạy manual trade hay EA khác trên hai account.
+  - Dùng tiền thật.
+  - Tự thay baseline V26 bằng V63.
+
+Mọi thay đổi execution sau khi Stage 1 bắt đầu sẽ tạo phiên bản/mẫu forward mới,
+không được hồi tố vào mẫu hiện tại.
+
+================================================================================
+4. VIỆC CODEX WINDOWS CẦN LÀM THEO THỨ TỰ
+================================================================================
+
+PHASE A - KIỂM TRA MÔI TRƯỜNG
+  1. Xác nhận laptop Windows chạy liên tục: cắm sạc, Sleep=Never, lid close=Do nothing,
+     mạng ổn định, Windows Update không tự restart.
+  2. Xác nhận Python bằng: py --version.
+  3. Xác nhận hai MT5 cài độc lập, ví dụ:
+       D:\Trading\MT5-V26\
+       D:\Trading\MT5-V63\
+  4. Trong mỗi MT5: File > Open Data Folder.
+     Hai Data Folder phải KHÁC nhau.
+  5. Không yêu cầu/không nhận password hoặc mã 2FA Exness.
+
+PHASE B - KIỂM TRA ACCOUNT VÀ SYMBOL
+  1. Người dùng tự login hai account demo MT5 riêng.
+  2. Xác nhận cả hai: server, USD, balance 5,000, leverage 1:10,
+     account type/margin mode tương đương.
+  3. Trong Market Watch > BTCUSD > Specification, ghi exact symbol, contract size,
+     min lot, volume step, tick size, tick value, stops/freeze level, commission.
+  4. Nếu specs hoặc account mode giữa hai account khác nhau: DỪNG, không khởi động.
+
+PHASE C - DEPLOY EA
+  1. Verify SHA-256 source/preset theo Mục 3 trước khi copy.
+  2. Chép .mq5 vào MQL5\Experts\Advisors\ của TỪNG Data Folder.
+  3. Compile trong MetaEditor của từng terminal; phải "0 errors, 0 warnings".
+  4. V26: BTCUSD H1 + preset 79_v26_forward_demo.set.
+  5. V63: BTCUSD H1 + preset 80_v63_forward_demo.set.
+  6. Kiểm MagicNumber và input khóa. Chưa bật Algo Trading.
+
+PHASE D - SMOKE BẮT BUỘC TRÊN TERMINAL MỤC TIÊU
+  Chạy 4 test H1, real ticks, 2026.06.01-2026.06.30, deposit 5,000 USD, leverage 1:10:
+    1. 26_v23_add1_trigger_2p25_lock_0p75.set (V26 OFF)
+    2. 79_v26_forward_demo.set (V26 ON)
+    3. 63_v30_d1_early_veto.set (V63 OFF)
+    4. 80_v63_forward_demo.set (V63 ON)
+
+  Xuất HTML report và journal cho bốn run.
+  So sánh từng cặp OFF/ON: Total Trades, Net Profit, PF, Equity DD và execution
+  diagnostics phải khớp tuyệt đối. Nếu không khớp: DỪNG, không bật forward.
+
+PHASE E - LAUNCH STAGE 1
+  1. Cả hai account flat, không pending order, balance đúng 5,000.
+  2. Archive CSV cũ trước launch. Không xóa nhầm data terminal khác.
+  3. Bật hai EA cùng ngày/giờ trên BTCUSD H1.
+  4. Bật Algo Trading.
+  5. Kiểm Journal có "FORWARD telemetry initialized".
+  6. Kiểm MQL5\Files\Mentor_RSI_MTF_forward.csv có event=INIT, đúng magic,
+     symbol, leverage và contract specs.
+  7. Ghi ngày bắt đầu Stage 1 và timezone Asia/Ho_Chi_Minh.
+
+PHASE F - DUY TRÌ VÀ REVIEW
+  1. Tạo hai Task Scheduler tasks, At log on, để mở đúng hai terminal sau reboot.
+  2. Sau reboot, phải xác nhận lại: đúng account/chart/preset + Algo Trading bật.
+  3. Mỗi tuần người dùng xuất Account History HTML; Codex xử lý telemetry/summary/gate.
+  4. Chạy:
+       py tools\mt5\report_summary.py --json REPORT.html > summary.json
+       py tools\mt5\forward_gate.py gate --stage stage1 --summary summary.json \
+         --telemetry Mentor_RSI_MTF_forward.csv --journal expert-journal.txt \
+         --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+
+  Gate exit code:
+    0 = PASS
+    2 = WAIT (chưa đủ 90 ngày VÀ 60 closed cycles)
+    3 = FAIL
+
+================================================================================
+5. PAUSE NGAY KHI CÓ SỰ KIỆN SAU
+================================================================================
+
+Tắt Algo Trading ở terminal bị ảnh hưởng, giữ toàn bộ CSV/log/report, không sửa preset:
+  - Equity DD >= 8%.
+  - ACTUAL_RISK_VIOLATION.
+  - POST_FILL_VIOLATION.
+  - STOP_MODIFY_FAIL.
+  - actual risk vượt planned risk.
+  - MISSING_STATE, initialization failure hoặc disconnect chưa phục hồi.
+
+Order reject hoặc raw-lot dưới min-lot: không tự tăng risk; phải ghi nhận và phân tích.
+
+================================================================================
+6. ĐỊNH NGHĨA KẾT QUẢ STAGE 1
+================================================================================
+
+Chỉ đánh giá Stage 1 sau khi MỖI hệ thống đạt CẢ HAI:
+  - >= 90 ngày lịch.
+  - >= 60 closed cycles (không dùng MT5 Total Trades vì partial/pyramid tạo nhiều deals).
+
+Đi Stage 2 nếu:
+  PF >= 0.95; DD < 8%; dữ liệu đầy đủ; không có lỗi risk/stop.
+
+Stage 2 kết thúc tối thiểu 180 ngày + 120 closed cycles.
+Không cân nhắc micro-live trước Stage 2 và không tự tăng risk để cứu PF.
+
+================================================================================
+7. PROMPT NGẮN ĐỂ BẮT ĐẦU CHAT VỚI CODEX WINDOWS
+================================================================================
+
+Sao chép nguyên văn đoạn sau vào Codex trên Windows:
+
+"Hãy tiếp quản setup Stage 1 forward demo trong repository hiện tại. Đọc file
+outputs\\windows_codex_handoff.txt trước, sau đó đọc outputs\\windows_laptop_stage1_setup.txt,
+outputs\\forward_demo_runbook.md và outputs\\forward_demo_lock_manifest.json. Không nghiên cứu
+hay thay đổi strategy/execution. Tôi cần bạn hướng dẫn và kiểm tra từng bước theo Phase A -> F,
+dừng ở mỗi bước cần tôi login Exness, xác nhận broker/spec, hoặc thao tác GUI. V26 là baseline,
+V63 chỉ là challenger. Chỉ demo, không dùng tiền thật."
+
+KẾT THÚC HANDOFF
