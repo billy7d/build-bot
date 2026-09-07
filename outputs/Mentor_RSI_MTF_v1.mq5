@@ -96,6 +96,13 @@ enum MarketStateShadowModeType
    MARKET_STATE_SHADOW_AUDIT = 1
 };
 
+// Chỉ audit Standard Deviation; không được tham gia vào execution.
+enum StandardDeviationShadowModeType
+{
+   STDDEV_SHADOW_OFF = 0,
+   STDDEV_SHADOW_AUDIT = 1
+};
+
 enum EntryQualityGateModeType
 {
    ENTRY_QUALITY_GATE_OFF = 0,
@@ -156,6 +163,14 @@ input int MarketStateATRRankBars = 480;
 input int MarketStateEfficiencyBars = 20;
 input double MarketStateLowEfficiency = 0.25;
 input double MarketStateHighATRRank = 80.0;
+
+// Các chu kỳ này là cấu hình đo lường đã đăng ký trước, không phải optimizer.
+input StandardDeviationShadowModeType StandardDeviationShadowMode = STDDEV_SHADOW_OFF;
+input int StdDevReturnPeriod = 20;
+input int StdDevPricePeriod = 20;
+input int StdDevSlowPricePeriod = 100;
+input int StdDevRSIPeriod = 20;
+input int StdDevRankBars = 480;
 
 // Disabled by default. These modes can only be enabled after the matching
 // audit passes its out-of-sample gate.
@@ -330,6 +345,23 @@ struct FanTracker
    bool consumed;
 };
 
+struct StandardDeviationAuditFeatures
+{
+   double returnStd20;
+   double returnStdRank;
+   double priceStd20;
+   double priceStd100;
+   double priceStdPct20;
+   double stdRatio20_100;
+   double priceZ20;
+   double priceAbsZ20;
+   double rsiStd20;
+   double rsiStdRank;
+   double atrReturnStdRatio;
+   double atrReturnStdRank;
+   bool complete;
+};
+
 struct ShadowEvent
 {
    int eventId;
@@ -382,6 +414,18 @@ struct ShadowEvent
    int ageBars;
    bool completed;
    bool written;
+   double entryReturnStd20;
+   double entryReturnStdRank;
+   double entryPriceStd20;
+   double entryPriceStd100;
+   double entryPriceStdPct20;
+   double entryStdRatio20_100;
+   double entryPriceZ20;
+   double entryPriceAbsZ20;
+   double entryRSIStd20;
+   double entryRSIStdRank;
+   double entryATRReturnStdRatio;
+   double entryATRReturnStdRank;
 };
 
 struct PyramidShadowEvent
@@ -417,6 +461,11 @@ struct PyramidShadowEvent
    int ageBars;
    bool completed;
    bool written;
+   double addEntryPriceZ20;
+   double addEntryAbsZ20;
+   double addReturnStdRank;
+   double addATRReturnStdRatio;
+   double addATRReturnStdRank;
 };
 
 struct CoreExitShadowEvent
@@ -481,6 +530,10 @@ int shadowNextEventId = 1;
 int shadowNextLongSetupId = 1;
 int shadowNextShortSetupId = 1;
 ShadowEvent shadowEvents[];
+
+datetime standardDeviationCacheBarTime = 0;
+bool standardDeviationCacheReady = false;
+StandardDeviationAuditFeatures standardDeviationCache;
 
 datetime lastPyramidShadowBarTime = 0;
 datetime pyramidShadowSignalBarTime = 0;
@@ -585,6 +638,10 @@ int diagShadowFlatBoth = 0;
 int diagShadowOpenSameSide = 0;
 int diagShadowOpenOppositeSide = 0;
 int diagShadowBuildFailures = 0;
+int diagStandardDeviationEvents = 0;
+int diagStandardDeviationComplete = 0;
+int diagStandardDeviationMissing = 0;
+int diagStandardDeviationBuildFailures = 0;
 int diagPyramidShadowEvents = 0;
 int diagPyramidShadowLongEvents = 0;
 int diagPyramidShadowShortEvents = 0;
@@ -891,6 +948,19 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    }
 
+   if(StandardDeviationShadowMode != STDDEV_SHADOW_OFF && ShadowSignalMode != SHADOW_AUDIT_EVENTS)
+   {
+      Print("StandardDeviationShadowMode requires ShadowSignalMode=SHADOW_AUDIT_EVENTS.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   if(StdDevReturnPeriod < 2 || StdDevPricePeriod < 2 || StdDevSlowPricePeriod < StdDevPricePeriod ||
+      StdDevRSIPeriod < 2 || StdDevRankBars < 1)
+   {
+      Print("Standard Deviation audit periods are invalid.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
    if(MarketStateATRRankBars < 48 || MarketStateEfficiencyBars < 2 ||
       MarketStateLowEfficiency <= 0.0 || MarketStateLowEfficiency >= 1.0 ||
       MarketStateHighATRRank <= 0.0 || MarketStateHighATRRank >= 100.0 ||
@@ -991,7 +1061,11 @@ int OnInit()
                    "entry_atr_pct", "entry_atr_rank", "entry_efficiency_20", "entry_spread_r", "initial_sl_atr",
                    "low_efficiency", "high_spread_r", "high_volatility",
                    "hit_1r", "hit_minus_1r", "first_hit", "mfe_r", "mae_r",
-                   "return_6", "return_12", "return_24", "return_48", "completed");
+                   "return_6", "return_12", "return_24", "return_48", "completed",
+                   "entry_return_std_20", "entry_return_std_rank", "entry_price_std_20", "entry_price_std_100",
+                   "entry_price_std_pct_20", "entry_std_ratio_20_100", "entry_price_z20", "entry_price_abs_z20",
+                   "entry_rsi_std_20", "entry_rsi_std_rank", "entry_atr_return_std_ratio",
+                   "entry_atr_return_std_rank");
       }
       else
       {
@@ -1010,7 +1084,9 @@ int OnInit()
                    "locked_stop_pnl_r", "desired_add_risk_r", "raw_lots", "lots",
                    "spread_ok", "stop_ok", "locked_ok", "lot_ok", "margin_ok", "eligible", "gate_reason", "repeat_bars",
                    "hit_1r", "hit_minus_1r", "first_hit", "mfe_r", "mae_r",
-                   "return_6", "return_12", "return_24", "return_48", "completed");
+                   "return_6", "return_12", "return_24", "return_48", "completed",
+                   "add_entry_price_z20", "add_entry_abs_z20", "add_return_std_rank", "add_atr_return_std_ratio",
+                   "add_atr_return_std_rank");
       }
       else
       {
@@ -1529,7 +1605,14 @@ void WriteShadowEvent(int index)
                 shadowEvents[index].highSpreadR, shadowEvents[index].highVolatility,
                 shadowEvents[index].hit1R, shadowEvents[index].hitMinus1R, shadowEvents[index].firstHit, DoubleToString(shadowEvents[index].mfeR, 4), DoubleToString(shadowEvents[index].maeR, 4),
                 ShadowValue(shadowEvents[index].return6R), ShadowValue(shadowEvents[index].return12R), ShadowValue(shadowEvents[index].return24R), ShadowValue(shadowEvents[index].return48R),
-                shadowEvents[index].completed);
+                shadowEvents[index].completed,
+                ShadowValue(shadowEvents[index].entryReturnStd20), ShadowValue(shadowEvents[index].entryReturnStdRank),
+                ShadowValue(shadowEvents[index].entryPriceStd20), ShadowValue(shadowEvents[index].entryPriceStd100),
+                ShadowValue(shadowEvents[index].entryPriceStdPct20), ShadowValue(shadowEvents[index].entryStdRatio20_100),
+                ShadowValue(shadowEvents[index].entryPriceZ20), ShadowValue(shadowEvents[index].entryPriceAbsZ20),
+                ShadowValue(shadowEvents[index].entryRSIStd20), ShadowValue(shadowEvents[index].entryRSIStdRank),
+                ShadowValue(shadowEvents[index].entryATRReturnStdRatio),
+                ShadowValue(shadowEvents[index].entryATRReturnStdRank));
    }
    shadowEvents[index].written = true;
 }
@@ -1583,6 +1666,7 @@ bool AddShadowEvent(bool longSide, bool longValid, bool shortValid, const string
    shadowEvents[index].h4RegimeScore = RegimeScore(h4);
    shadowEvents[index].compositeRegimeScore = CompositeRegimeScore(d1, h4);
    PopulateMarketState(shadowEvents[index], entry);
+   PopulateStandardDeviation(shadowEvents[index], entry);
    shadowEvents[index].firstHit = "NONE";
    shadowEvents[index].return6R = EMPTY_VALUE;
    shadowEvents[index].return12R = EMPTY_VALUE;
@@ -2061,7 +2145,12 @@ void WritePyramidShadowEvent(int index)
                 PyramidShadowValue(pyramidShadowEvents[index].return12R),
                 PyramidShadowValue(pyramidShadowEvents[index].return24R),
                 PyramidShadowValue(pyramidShadowEvents[index].return48R),
-                pyramidShadowEvents[index].completed);
+                pyramidShadowEvents[index].completed,
+                PyramidShadowValue(pyramidShadowEvents[index].addEntryPriceZ20),
+                PyramidShadowValue(pyramidShadowEvents[index].addEntryAbsZ20),
+                PyramidShadowValue(pyramidShadowEvents[index].addReturnStdRank),
+                PyramidShadowValue(pyramidShadowEvents[index].addATRReturnStdRatio),
+                PyramidShadowValue(pyramidShadowEvents[index].addATRReturnStdRank));
    }
    pyramidShadowEvents[index].written = true;
 }
@@ -2103,6 +2192,7 @@ bool AddPyramidShadowEvent(long positionType, double baseR)
    pyramidShadowEvents[index].return48R = EMPTY_VALUE;
    pyramidShadowEvents[index].firstHit = "NONE";
    pyramidShadowEvents[index].repeatBars = 1;
+   PopulatePyramidStandardDeviation(pyramidShadowEvents[index]);
 
    double spreadR = (ask - bid) / pyramidInitialRiskDistance;
    pyramidShadowEvents[index].spreadOK = (spreadR <= PyramidMaxSpreadR);
@@ -2705,6 +2795,373 @@ double PriceEfficiencyRatio(ENUM_TIMEFRAMES tf, int bars)
    if(travel <= _Point)
       return 0.0;
    return MathAbs(rates[0].close - rates[bars].close) / travel;
+}
+
+bool StandardDeviationValueAvailable(double value)
+{
+   return (value != EMPTY_VALUE && MathIsValidNumber(value));
+}
+
+void ResetStandardDeviationFeatures(StandardDeviationAuditFeatures &features)
+{
+   features.returnStd20 = EMPTY_VALUE;
+   features.returnStdRank = EMPTY_VALUE;
+   features.priceStd20 = EMPTY_VALUE;
+   features.priceStd100 = EMPTY_VALUE;
+   features.priceStdPct20 = EMPTY_VALUE;
+   features.stdRatio20_100 = EMPTY_VALUE;
+   features.priceZ20 = EMPTY_VALUE;
+   features.priceAbsZ20 = EMPTY_VALUE;
+   features.rsiStd20 = EMPTY_VALUE;
+   features.rsiStdRank = EMPTY_VALUE;
+   features.atrReturnStdRatio = EMPTY_VALUE;
+   features.atrReturnStdRank = EMPTY_VALUE;
+   features.complete = false;
+}
+
+void CopyStandardDeviationFeatures(const StandardDeviationAuditFeatures &source,
+                                   StandardDeviationAuditFeatures &target)
+{
+   target.returnStd20 = source.returnStd20;
+   target.returnStdRank = source.returnStdRank;
+   target.priceStd20 = source.priceStd20;
+   target.priceStd100 = source.priceStd100;
+   target.priceStdPct20 = source.priceStdPct20;
+   target.stdRatio20_100 = source.stdRatio20_100;
+   target.priceZ20 = source.priceZ20;
+   target.priceAbsZ20 = source.priceAbsZ20;
+   target.rsiStd20 = source.rsiStd20;
+   target.rsiStdRank = source.rsiStdRank;
+   target.atrReturnStdRatio = source.atrReturnStdRatio;
+   target.atrReturnStdRank = source.atrReturnStdRank;
+   target.complete = source.complete;
+}
+
+double StandardDeviationFromSeries(const double &values[], int start, int count)
+{
+   if(count < 2 || start < 0 || start + count > ArraySize(values))
+      return EMPTY_VALUE;
+
+   double sum = 0.0;
+   for(int i = 0; i < count; i++)
+   {
+      double value = values[start + i];
+      if(!MathIsValidNumber(value))
+         return EMPTY_VALUE;
+      sum += value;
+   }
+
+   double mean = sum / count;
+   double squaredDistance = 0.0;
+   for(int i = 0; i < count; i++)
+   {
+      double distance = values[start + i] - mean;
+      squaredDistance += distance * distance;
+   }
+
+   double variance = squaredDistance / count;
+   if(variance < 0.0 || !MathIsValidNumber(variance))
+      return EMPTY_VALUE;
+   return MathSqrt(variance);
+}
+
+double CloseAverageFromRates(const MqlRates &rates[], int start, int count)
+{
+   if(count < 1 || start < 0 || start + count > ArraySize(rates))
+      return EMPTY_VALUE;
+
+   double sum = 0.0;
+   for(int i = 0; i < count; i++)
+   {
+      double close = rates[start + i].close;
+      if(close <= 0.0 || !MathIsValidNumber(close))
+         return EMPTY_VALUE;
+      sum += close;
+   }
+   return sum / count;
+}
+
+double CloseStandardDeviationFromRates(const MqlRates &rates[], int start, int count)
+{
+   if(count < 2 || start < 0 || start + count > ArraySize(rates))
+      return EMPTY_VALUE;
+
+   double mean = CloseAverageFromRates(rates, start, count);
+   if(!StandardDeviationValueAvailable(mean) || mean <= 0.0)
+      return EMPTY_VALUE;
+
+   double squaredDistance = 0.0;
+   for(int i = 0; i < count; i++)
+   {
+      double close = rates[start + i].close;
+      if(close <= 0.0 || !MathIsValidNumber(close))
+         return EMPTY_VALUE;
+      double distance = close - mean;
+      squaredDistance += distance * distance;
+   }
+
+   double variance = squaredDistance / count;
+   if(variance < 0.0 || !MathIsValidNumber(variance))
+      return EMPTY_VALUE;
+   return MathSqrt(variance);
+}
+
+double ReturnStandardDeviationFromRates(const MqlRates &rates[], int start, int period)
+{
+   if(period < 2 || start < 0 || start + period >= ArraySize(rates))
+      return EMPTY_VALUE;
+
+   double sum = 0.0;
+   for(int i = 0; i < period; i++)
+   {
+      double newerClose = rates[start + i].close;
+      double olderClose = rates[start + i + 1].close;
+      if(newerClose <= 0.0 || olderClose <= 0.0 ||
+         !MathIsValidNumber(newerClose) || !MathIsValidNumber(olderClose))
+         return EMPTY_VALUE;
+
+      double logReturn = MathLog(newerClose / olderClose);
+      if(!MathIsValidNumber(logReturn))
+         return EMPTY_VALUE;
+      sum += logReturn;
+   }
+
+   double mean = sum / period;
+   double squaredDistance = 0.0;
+   for(int i = 0; i < period; i++)
+   {
+      double logReturn = MathLog(rates[start + i].close / rates[start + i + 1].close);
+      if(!MathIsValidNumber(logReturn))
+         return EMPTY_VALUE;
+      double distance = logReturn - mean;
+      squaredDistance += distance * distance;
+   }
+
+   double variance = squaredDistance / period;
+   if(variance < 0.0 || !MathIsValidNumber(variance))
+      return EMPTY_VALUE;
+   return MathSqrt(variance);
+}
+
+double StandardDeviationRankFromRates(const MqlRates &rates[], int period, int rankBars, double current)
+{
+   if(!StandardDeviationValueAvailable(current) || current < 0.0 || rankBars < 1)
+      return EMPTY_VALUE;
+
+   int atOrBelow = 0;
+   for(int offset = 1; offset <= rankBars; offset++)
+   {
+      double historical = ReturnStandardDeviationFromRates(rates, offset, period);
+      if(!StandardDeviationValueAvailable(historical) || historical < 0.0)
+         return EMPTY_VALUE;
+      if(historical <= current)
+         atOrBelow++;
+   }
+   return (double)atOrBelow / rankBars * 100.0;
+}
+
+double StandardDeviationRankFromSeries(const double &values[], int period, int rankBars, double current)
+{
+   if(!StandardDeviationValueAvailable(current) || current < 0.0 || rankBars < 1)
+      return EMPTY_VALUE;
+
+   int atOrBelow = 0;
+   for(int offset = 1; offset <= rankBars; offset++)
+   {
+      double historical = StandardDeviationFromSeries(values, offset, period);
+      if(!StandardDeviationValueAvailable(historical) || historical < 0.0)
+         return EMPTY_VALUE;
+      if(historical <= current)
+         atOrBelow++;
+   }
+   return (double)atOrBelow / rankBars * 100.0;
+}
+
+bool BuildStandardDeviationFeatures(ENUM_TIMEFRAMES tf, StandardDeviationAuditFeatures &features)
+{
+   ResetStandardDeviationFeatures(features);
+   int idx = TfIndex(tf);
+   if(idx < 0)
+      return false;
+
+   int rateCount = StdDevSlowPricePeriod;
+   int rankRateCount = StdDevRankBars + StdDevReturnPeriod + 1;
+   if(rankRateCount > rateCount)
+      rateCount = rankRateCount;
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, tf, 1, rateCount, rates) < rateCount)
+      return false;
+
+   // Mọi cửa sổ đều bắt đầu từ rates[0], tức nến đã đóng gần nhất (shift 1).
+   features.returnStd20 = ReturnStandardDeviationFromRates(rates, 0, StdDevReturnPeriod);
+   features.returnStdRank = StandardDeviationRankFromRates(rates, StdDevReturnPeriod,
+                                                           StdDevRankBars, features.returnStd20);
+   features.priceStd20 = CloseStandardDeviationFromRates(rates, 0, StdDevPricePeriod);
+   features.priceStd100 = CloseStandardDeviationFromRates(rates, 0, StdDevSlowPricePeriod);
+
+   double priceSma20 = CloseAverageFromRates(rates, 0, StdDevPricePeriod);
+   if(StandardDeviationValueAvailable(features.priceStd20) && priceSma20 > 0.0)
+      features.priceStdPct20 = features.priceStd20 / priceSma20 * 100.0;
+   if(StandardDeviationValueAvailable(features.priceStd20) && features.priceStd20 > 1.0e-12 && priceSma20 > 0.0)
+   {
+      features.priceZ20 = (rates[0].close - priceSma20) / features.priceStd20;
+      features.priceAbsZ20 = MathAbs(features.priceZ20);
+   }
+   if(StandardDeviationValueAvailable(features.priceStd20) && features.priceStd20 > 1.0e-12 &&
+      StandardDeviationValueAvailable(features.priceStd100) && features.priceStd100 > 1.0e-12)
+      features.stdRatio20_100 = features.priceStd20 / features.priceStd100;
+
+   // Xếp hạng noise ratio dùng 480 quan sát đã đóng trước đó để tránh lấy phân phối tương lai.
+   int atrCount = StdDevRankBars + 1;
+   double atr[];
+   ArraySetAsSeries(atr, true);
+   if(CopyBuffer(atrHandles[idx], 0, 1, atrCount, atr) < atrCount)
+      return false;
+
+   if(StandardDeviationValueAvailable(features.returnStd20) && features.returnStd20 > 1.0e-12 &&
+      StandardDeviationValueAvailable(atr[0]) && atr[0] > 0.0 &&
+      rates[0].close > 0.0 && MathIsValidNumber(rates[0].close))
+   {
+      features.atrReturnStdRatio = (atr[0] / rates[0].close) / features.returnStd20;
+      int atOrBelow = 0;
+      bool rankReady = true;
+      for(int offset = 1; offset <= StdDevRankBars; offset++)
+      {
+         double historicalReturnStd = ReturnStandardDeviationFromRates(rates, offset, StdDevReturnPeriod);
+         double historicalClose = rates[offset].close;
+         double historicalATR = atr[offset];
+         if(!StandardDeviationValueAvailable(historicalReturnStd) || historicalReturnStd <= 1.0e-12 ||
+            historicalClose <= 0.0 || !MathIsValidNumber(historicalClose) ||
+            !StandardDeviationValueAvailable(historicalATR) || historicalATR <= 0.0)
+         {
+            rankReady = false;
+            break;
+         }
+
+         double historicalRatio = (historicalATR / historicalClose) / historicalReturnStd;
+         if(!MathIsValidNumber(historicalRatio))
+         {
+            rankReady = false;
+            break;
+         }
+         if(historicalRatio <= features.atrReturnStdRatio)
+            atOrBelow++;
+      }
+      if(rankReady)
+         features.atrReturnStdRank = (double)atOrBelow / StdDevRankBars * 100.0;
+      else
+         features.atrReturnStdRank = EMPTY_VALUE;
+   }
+
+   int rsiCount = StdDevRankBars + StdDevRSIPeriod;
+   double rsi[];
+   ArraySetAsSeries(rsi, true);
+   if(CopyBuffer(rsiHandles[idx], 0, 1, rsiCount, rsi) < rsiCount)
+      return false;
+
+   features.rsiStd20 = StandardDeviationFromSeries(rsi, 0, StdDevRSIPeriod);
+   features.rsiStdRank = StandardDeviationRankFromSeries(rsi, StdDevRSIPeriod,
+                                                          StdDevRankBars, features.rsiStd20);
+   features.complete = StandardDeviationValueAvailable(features.returnStd20) &&
+                       StandardDeviationValueAvailable(features.returnStdRank) &&
+                       StandardDeviationValueAvailable(features.priceStd20) &&
+                       StandardDeviationValueAvailable(features.priceStd100) &&
+                       StandardDeviationValueAvailable(features.priceStdPct20) &&
+                       StandardDeviationValueAvailable(features.priceZ20) &&
+                       StandardDeviationValueAvailable(features.priceAbsZ20) &&
+                       StandardDeviationValueAvailable(features.rsiStd20) &&
+                       StandardDeviationValueAvailable(features.rsiStdRank) &&
+                       StandardDeviationValueAvailable(features.atrReturnStdRatio) &&
+                       StandardDeviationValueAvailable(features.atrReturnStdRank);
+   return features.complete;
+}
+
+bool GetStandardDeviationFeatures(ENUM_TIMEFRAMES tf, StandardDeviationAuditFeatures &features)
+{
+   ResetStandardDeviationFeatures(features);
+   if(StandardDeviationShadowMode != STDDEV_SHADOW_AUDIT)
+      return false;
+
+   datetime barTime = iTime(_Symbol, tf, 0);
+   if(standardDeviationCacheReady && barTime != 0 && standardDeviationCacheBarTime == barTime)
+   {
+      CopyStandardDeviationFeatures(standardDeviationCache, features);
+      return features.complete;
+   }
+
+   bool complete = BuildStandardDeviationFeatures(tf, features);
+   if(barTime != 0)
+   {
+      CopyStandardDeviationFeatures(features, standardDeviationCache);
+      standardDeviationCacheBarTime = barTime;
+      standardDeviationCacheReady = true;
+   }
+   return complete;
+}
+
+void PopulateStandardDeviation(ShadowEvent &event, const TFState &entry)
+{
+   event.entryReturnStd20 = EMPTY_VALUE;
+   event.entryReturnStdRank = EMPTY_VALUE;
+   event.entryPriceStd20 = EMPTY_VALUE;
+   event.entryPriceStd100 = EMPTY_VALUE;
+   event.entryPriceStdPct20 = EMPTY_VALUE;
+   event.entryStdRatio20_100 = EMPTY_VALUE;
+   event.entryPriceZ20 = EMPTY_VALUE;
+   event.entryPriceAbsZ20 = EMPTY_VALUE;
+   event.entryRSIStd20 = EMPTY_VALUE;
+   event.entryRSIStdRank = EMPTY_VALUE;
+   event.entryATRReturnStdRatio = EMPTY_VALUE;
+   event.entryATRReturnStdRank = EMPTY_VALUE;
+
+   if(StandardDeviationShadowMode != STDDEV_SHADOW_AUDIT)
+      return;
+
+   StandardDeviationAuditFeatures features;
+   bool complete = GetStandardDeviationFeatures(entry.tf, features);
+   event.entryReturnStd20 = features.returnStd20;
+   event.entryReturnStdRank = features.returnStdRank;
+   event.entryPriceStd20 = features.priceStd20;
+   event.entryPriceStd100 = features.priceStd100;
+   event.entryPriceStdPct20 = features.priceStdPct20;
+   event.entryStdRatio20_100 = features.stdRatio20_100;
+   event.entryPriceZ20 = features.priceZ20;
+   event.entryPriceAbsZ20 = features.priceAbsZ20;
+   event.entryRSIStd20 = features.rsiStd20;
+   event.entryRSIStdRank = features.rsiStdRank;
+   event.entryATRReturnStdRatio = features.atrReturnStdRatio;
+   event.entryATRReturnStdRank = features.atrReturnStdRank;
+
+   diagStandardDeviationEvents++;
+   if(complete)
+      diagStandardDeviationComplete++;
+   else
+   {
+      diagStandardDeviationMissing++;
+      diagStandardDeviationBuildFailures++;
+   }
+}
+
+void PopulatePyramidStandardDeviation(PyramidShadowEvent &event)
+{
+   event.addEntryPriceZ20 = EMPTY_VALUE;
+   event.addEntryAbsZ20 = EMPTY_VALUE;
+   event.addReturnStdRank = EMPTY_VALUE;
+   event.addATRReturnStdRatio = EMPTY_VALUE;
+   event.addATRReturnStdRank = EMPTY_VALUE;
+
+   if(StandardDeviationShadowMode != STDDEV_SHADOW_AUDIT)
+      return;
+
+   StandardDeviationAuditFeatures features;
+   GetStandardDeviationFeatures(EntryTF, features);
+   event.addEntryPriceZ20 = features.priceZ20;
+   event.addEntryAbsZ20 = features.priceAbsZ20;
+   event.addReturnStdRank = features.returnStdRank;
+   event.addATRReturnStdRatio = features.atrReturnStdRatio;
+   event.addATRReturnStdRank = features.atrReturnStdRank;
 }
 
 void PopulateMarketState(ShadowEvent &event, const TFState &entry)
@@ -4845,6 +5302,13 @@ string MarketStateShadowModeText()
    return "MARKET_STATE_SHADOW_OFF";
 }
 
+string StandardDeviationShadowModeText()
+{
+   if(StandardDeviationShadowMode == STDDEV_SHADOW_AUDIT)
+      return "STDDEV_SHADOW_AUDIT";
+   return "STDDEV_SHADOW_OFF";
+}
+
 string EntryQualityGateModeText()
 {
    if(EntryQualityGateMode == ENTRY_QUALITY_GATE_ER20_LOW_VETO)
@@ -5025,6 +5489,19 @@ void PrintDiagnosticsSummary(string source)
    shadow += " buildFail=" + IntegerToString(diagShadowBuildFailures);
    shadow += " csv=" + (ExportShadowSignalsCsv ? "true" : "false");
    Print(shadow);
+
+   string standardDeviation = "DIAG_SUMMARY stdDevShadow source=" + source;
+   standardDeviation += " mode=" + StandardDeviationShadowModeText();
+   standardDeviation += " returnPeriod=" + IntegerToString(StdDevReturnPeriod);
+   standardDeviation += " pricePeriod=" + IntegerToString(StdDevPricePeriod);
+   standardDeviation += " slowPricePeriod=" + IntegerToString(StdDevSlowPricePeriod);
+   standardDeviation += " rsiPeriod=" + IntegerToString(StdDevRSIPeriod);
+   standardDeviation += " rankBars=" + IntegerToString(StdDevRankBars);
+   standardDeviation += " events=" + IntegerToString(diagStandardDeviationEvents);
+   standardDeviation += " complete=" + IntegerToString(diagStandardDeviationComplete);
+   standardDeviation += " missing=" + IntegerToString(diagStandardDeviationMissing);
+   standardDeviation += " buildFail=" + IntegerToString(diagStandardDeviationBuildFailures);
+   Print(standardDeviation);
 
    string marketState = "DIAG_SUMMARY marketState source=" + source;
    marketState += " mode=" + MarketStateShadowModeText();

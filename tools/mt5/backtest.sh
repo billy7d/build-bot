@@ -204,6 +204,18 @@ if [[ -n "$PYRAMID_SHADOW_CSV" ]]; then
     --output "$RESULT_DIR/pyramid-shadow-summary.json"
 fi
 
+# Tạo summary StdDev khi CSV có schema V81; kèm pyramid context nếu có.
+if [[ -f "$RESULT_DIR/shadow-signals.csv" ]] && head -1 "$RESULT_DIR/shadow-signals.csv" | grep -q 'entry_return_std_20'; then
+  if [[ -f "$RESULT_DIR/pyramid-shadow-signals.csv" ]]; then
+    python3 "$SCRIPT_DIR/stddev_state_summary.py" "$RESULT_DIR/shadow-signals.csv" \
+      --pyramid-csv "$RESULT_DIR/pyramid-shadow-signals.csv" \
+      --output "$RESULT_DIR/stddev-state-summary.json"
+  else
+    python3 "$SCRIPT_DIR/stddev_state_summary.py" "$RESULT_DIR/shadow-signals.csv" \
+      --output "$RESULT_DIR/stddev-state-summary.json"
+  fi
+fi
+
 CORE_EXIT_SHADOW_CSV="$(find "$MT5_HOME/Tester" -type f -name "$CORE_EXIT_SHADOW_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
 if [[ -n "$CORE_EXIT_SHADOW_CSV" ]]; then
   cp "$CORE_EXIT_SHADOW_CSV" "$RESULT_DIR/core-exit-shadow-signals.csv"
