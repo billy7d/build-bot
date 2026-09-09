@@ -153,6 +153,7 @@ TESTER_LOG="$MT5_HOME/Tester/logs/$TODAY.log"
 SHADOW_CSV_NAME="Mentor_RSI_MTF_shadow_signals.csv"
 PYRAMID_SHADOW_CSV_NAME="Mentor_RSI_MTF_pyramid_shadow.csv"
 CORE_EXIT_SHADOW_CSV_NAME="Mentor_RSI_MTF_core_exit_shadow.csv"
+BLOCKED_SIGNAL_SHADOW_CSV_NAME="Mentor_RSI_MTF_v82_blocked_signals.csv"
 DIAG_CSV_NAME="Mentor_RSI_MTF_diag.csv"
 FORWARD_CSV_NAME="Mentor_RSI_MTF_forward.csv"
 SHADOW_MARKER="/private/tmp/mt5-codex-shadow-$RUN_NAME.marker"
@@ -221,6 +222,15 @@ if [[ -n "$CORE_EXIT_SHADOW_CSV" ]]; then
   cp "$CORE_EXIT_SHADOW_CSV" "$RESULT_DIR/core-exit-shadow-signals.csv"
   python3 "$SCRIPT_DIR/core_exit_shadow_summary.py" "$RESULT_DIR/core-exit-shadow-signals.csv" \
     --output "$RESULT_DIR/core-exit-shadow-summary.json"
+fi
+
+BLOCKED_SIGNAL_SHADOW_CSV="$(find "$MT5_HOME/Tester" -type f -name "$BLOCKED_SIGNAL_SHADOW_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"
+if [[ -n "$BLOCKED_SIGNAL_SHADOW_CSV" ]]; then
+  cp "$BLOCKED_SIGNAL_SHADOW_CSV" "$RESULT_DIR/blocked-signal-shadow-signals.csv"
+  python3 "$SCRIPT_DIR/blocked_signal_summary.py" \
+    "$RESULT_DIR/blocked-signal-shadow-signals.csv" \
+    --json-output "$RESULT_DIR/blocked-signal-shadow-summary.json" \
+    --markdown-output "$RESULT_DIR/blocked-signal-shadow-summary.md"
 fi
 
 DIAG_CSV="$(find "$MT5_HOME/Tester" -type f -name "$DIAG_CSV_NAME" -newer "$SHADOW_MARKER" -print | tail -1)"

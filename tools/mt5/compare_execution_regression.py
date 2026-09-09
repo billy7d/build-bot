@@ -130,6 +130,10 @@ def diagnostic_groups(path: Path):
             current = []
         if normalized.startswith("DIAG_SUMMARY stdDevShadow "):
             continue
+        if normalized.startswith("DIAG_SUMMARY blockedSignalShadow "):
+            # V82 telemetry is intentionally allowed to differ between the
+            # control and audit runs; execution diagnostics remain compared.
+            continue
         current.append(normalized)
     if current:
         groups.append(current)

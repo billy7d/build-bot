@@ -103,6 +103,13 @@ enum StandardDeviationShadowModeType
    STDDEV_SHADOW_AUDIT = 1
 };
 
+// V82 is observation-only.  It must never be used as an execution gate.
+enum BlockedSignalShadowModeType
+{
+   BLOCKED_SIGNAL_SHADOW_OFF = 0,
+   BLOCKED_SIGNAL_SHADOW_AUDIT = 1
+};
+
 enum EntryQualityGateModeType
 {
    ENTRY_QUALITY_GATE_OFF = 0,
@@ -171,6 +178,12 @@ input int StdDevPricePeriod = 20;
 input int StdDevSlowPricePeriod = 100;
 input int StdDevRSIPeriod = 20;
 input int StdDevRankBars = 480;
+
+// V82 blocked-signal/opportunity-cost audit.  This has a separate state domain
+// and CSV so enabling it cannot reset or otherwise alter V26 execution state.
+input BlockedSignalShadowModeType BlockedSignalShadowMode = BLOCKED_SIGNAL_SHADOW_OFF;
+input int BlockedSignalShadowForwardBars = 48;
+input bool ExportBlockedSignalShadowCsv = false;
 
 // Disabled by default. These modes can only be enabled after the matching
 // audit passes its out-of-sample gate.
@@ -428,6 +441,147 @@ struct ShadowEvent
    double entryATRReturnStdRank;
 };
 
+struct BlockedShadowSetupState
+{
+   int longArmedBars;
+   int shortArmedBars;
+   int longSetupGeneration;
+   int shortSetupGeneration;
+   bool lastLongSignal;
+   bool lastShortSignal;
+};
+
+struct ActiveTradeSnapshot
+{
+   bool valid;
+   long positionType;
+   string side;
+   string groupId;
+   double entryPrice;
+   double currentPrice;
+   double initialRiskMoney;
+   double initialRiskDistance;
+   double currentR;
+   double currentSL;
+   bool isBE;
+   bool tp1Done;
+   bool tp2Done;
+   bool runnerActive;
+   int pyramidAdds;
+   int barsOpen;
+   double lockedProfitR;
+   double groupVolume;
+   datetime entryTime;
+   int positionCount;
+   ulong positionTickets[4];
+   long positionIdentifiers[4];
+};
+
+struct BlockedSignalShadowEvent
+{
+   string eventId;
+   datetime eventTime;
+   datetime entryBarTime;
+   string year;
+   string fold;
+   string side;
+   string eventType;
+   string activeSide;
+   string shadowSide;
+   string actualSelectedSide;
+   string blockedSide;
+   string direction;
+   int setupGeneration;
+   string activeGroupId;
+   bool shadowBuildValid;
+   string shadowBuildReason;
+   string longReject;
+   string shortReject;
+   double shadowEntryPrice;
+   double shadowSpread;
+   double shadowInitialSL;
+   double shadowRiskDistance;
+   double shadowEntryRSI;
+   double shadowEntryRSIEMA;
+   double shadowEntryRSIWMA;
+   double entryATRPct;
+   double entryATRRank;
+   double entryEfficiency20;
+   double entrySpreadR;
+   double initialSLATR;
+   string d1Bias;
+   string h4Bias;
+   string h1Bias;
+   int d1RegimeScore;
+   int h4RegimeScore;
+   int compositeRegimeScore;
+
+   double activeEntryPrice;
+   double activeCurrentPrice;
+   double activeInitialRisk;
+   double activeInitialRiskDistance;
+   double activeCurrentR;
+   double activeSL;
+   bool activeIsBE;
+   bool activeTP1Done;
+   bool activeTP2Done;
+   bool activeRunnerActive;
+   int activePyramidAdds;
+   int activeBarsOpen;
+   double activeLockedProfitR;
+   double activeGroupVolume;
+   int activePositionCount;
+   long activePositionIdentifiers[4];
+   double activeValueAtEventR;
+   double activeValue6BarR;
+   double activeValue12BarR;
+   double activeValue24BarR;
+   double activeValue48BarR;
+   double activeContinuation6BarR;
+   double activeContinuation12BarR;
+   double activeContinuation24BarR;
+   double activeContinuation48BarR;
+   bool activePlus1RHit;
+   bool activeMinus1RHit;
+   string activeFirstHit;
+
+   bool shadowPlus1RHit;
+   bool shadowMinus1RHit;
+   bool shadowPlus1RFirst;
+   bool shadowMinus1RFirst;
+   string shadowFirstHit;
+   double shadowMFER;
+   double shadowMAER;
+   double shadowReturn6BarR;
+   double shadowReturn12BarR;
+   double shadowReturn24BarR;
+   double shadowReturn48BarR;
+
+   bool actualSelectedBuildValid;
+   double actualSelectedEntryPrice;
+   double actualSelectedInitialSL;
+   double actualSelectedRiskDistance;
+   bool actualSelectedPlus1RHit;
+   bool actualSelectedMinus1RHit;
+   bool actualSelectedPlus1RFirst;
+   bool actualSelectedMinus1RFirst;
+   string actualSelectedFirstHit;
+   double actualSelectedMFER;
+   double actualSelectedMAER;
+   double actualSelectedReturn6BarR;
+   double actualSelectedReturn12BarR;
+   double actualSelectedReturn24BarR;
+   double actualSelectedReturn48BarR;
+
+   double opportunityDiff6BarR;
+   double opportunityDiff12BarR;
+   double opportunityDiff24BarR;
+   double opportunityDiff48BarR;
+   bool completed;
+   bool written;
+   int ageBars;
+};
+
 struct PyramidShadowEvent
 {
    int eventId;
@@ -531,6 +685,10 @@ int shadowNextLongSetupId = 1;
 int shadowNextShortSetupId = 1;
 ShadowEvent shadowEvents[];
 
+BlockedShadowSetupState blockedShadowState;
+datetime lastBlockedSignalShadowBarTime = 0;
+BlockedSignalShadowEvent blockedSignalShadowEvents[];
+
 datetime standardDeviationCacheBarTime = 0;
 bool standardDeviationCacheReady = false;
 StandardDeviationAuditFeatures standardDeviationCache;
@@ -618,6 +776,7 @@ int diagPyramidPostFillViolation = 0;
 double diagPyramidWorstBundleStopPnLR = 0.0;
 int diagCsvHandle = INVALID_HANDLE;
 int shadowCsvHandle = INVALID_HANDLE;
+int blockedSignalShadowCsvHandle = INVALID_HANDLE;
 int pyramidShadowCsvHandle = INVALID_HANDLE;
 int coreExitShadowCsvHandle = INVALID_HANDLE;
 int forwardCsvHandle = INVALID_HANDLE;
@@ -642,6 +801,16 @@ int diagStandardDeviationEvents = 0;
 int diagStandardDeviationComplete = 0;
 int diagStandardDeviationMissing = 0;
 int diagStandardDeviationBuildFailures = 0;
+int diagBlockedSignalShadowEvents = 0;
+int diagBlockedSignalShadowOpposite = 0;
+int diagBlockedSignalShadowSameSide = 0;
+int diagBlockedSignalShadowConflicts = 0;
+int diagBlockedSignalShadowControls = 0;
+int diagBlockedSignalShadowCompleted = 0;
+int diagBlockedSignalShadowInvalid = 0;
+int diagBlockedSignalShadowDuplicates = 0;
+int diagBlockedSignalShadowBuildFailures = 0;
+int diagBlockedSignalShadowAccountingFailures = 0;
 int diagPyramidShadowEvents = 0;
 int diagPyramidShadowLongEvents = 0;
 int diagPyramidShadowShortEvents = 0;
@@ -954,6 +1123,12 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    }
 
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_OFF && BlockedSignalShadowForwardBars < 48)
+   {
+      Print("BlockedSignalShadowForwardBars must be at least 48 so all fixed audit checkpoints are available.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
    if(StdDevReturnPeriod < 2 || StdDevPricePeriod < 2 || StdDevSlowPricePeriod < StdDevPricePeriod ||
       StdDevRSIPeriod < 2 || StdDevRankBars < 1)
    {
@@ -986,6 +1161,12 @@ int OnInit()
    if(ShadowSignalMode != SHADOW_OFF && EntryMode == RSI_FAN_STRUCTURE)
    {
       Print("Shadow audit currently supports the core CROSS/EXTREME/PULLBACK entry modes, not RSI_FAN_STRUCTURE.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_OFF && EntryMode == RSI_FAN_STRUCTURE)
+   {
+      Print("Blocked signal audit currently supports the core CROSS/EXTREME/PULLBACK entry modes, not RSI_FAN_STRUCTURE.");
       return INIT_PARAMETERS_INCORRECT;
    }
 
@@ -1073,6 +1254,119 @@ int OnInit()
       }
    }
 
+   if(BlockedSignalShadowMode == BLOCKED_SIGNAL_SHADOW_AUDIT && ExportBlockedSignalShadowCsv)
+   {
+      blockedSignalShadowCsvHandle = OpenObservationCsvFile("Mentor_RSI_MTF_v82_blocked_signals.csv");
+      if(blockedSignalShadowCsvHandle != INVALID_HANDLE)
+      {
+         if(FileSize(blockedSignalShadowCsvHandle) == 0)
+         {
+            string header = "";
+            bool first = true;
+            BlockedCsvAppend(header, first, "event_id");
+            BlockedCsvAppend(header, first, "event_time");
+            BlockedCsvAppend(header, first, "entry_bar_time");
+            BlockedCsvAppend(header, first, "year");
+            BlockedCsvAppend(header, first, "fold");
+            BlockedCsvAppend(header, first, "side");
+            BlockedCsvAppend(header, first, "event_type");
+            BlockedCsvAppend(header, first, "active_side");
+            BlockedCsvAppend(header, first, "shadow_side");
+            BlockedCsvAppend(header, first, "actual_selected_side");
+            BlockedCsvAppend(header, first, "blocked_side");
+            BlockedCsvAppend(header, first, "direction");
+            BlockedCsvAppend(header, first, "setup_generation");
+            BlockedCsvAppend(header, first, "active_group_id");
+            BlockedCsvAppend(header, first, "shadow_build_valid");
+            BlockedCsvAppend(header, first, "shadow_build_reason");
+            BlockedCsvAppend(header, first, "long_reject");
+            BlockedCsvAppend(header, first, "short_reject");
+            BlockedCsvAppend(header, first, "shadow_entry_price");
+            BlockedCsvAppend(header, first, "shadow_spread");
+            BlockedCsvAppend(header, first, "shadow_initial_sl");
+            BlockedCsvAppend(header, first, "shadow_risk_distance");
+            BlockedCsvAppend(header, first, "shadow_entry_rsi");
+            BlockedCsvAppend(header, first, "shadow_entry_rsi_ema");
+            BlockedCsvAppend(header, first, "shadow_entry_rsi_wma");
+            BlockedCsvAppend(header, first, "d1_bias");
+            BlockedCsvAppend(header, first, "h4_bias");
+            BlockedCsvAppend(header, first, "h1_bias");
+            BlockedCsvAppend(header, first, "d1_regime_score");
+            BlockedCsvAppend(header, first, "h4_regime_score");
+            BlockedCsvAppend(header, first, "composite_regime_score");
+            BlockedCsvAppend(header, first, "entry_atr_pct");
+            BlockedCsvAppend(header, first, "entry_atr_rank");
+            BlockedCsvAppend(header, first, "entry_efficiency_20");
+            BlockedCsvAppend(header, first, "entry_spread_r");
+            BlockedCsvAppend(header, first, "initial_sl_atr");
+            BlockedCsvAppend(header, first, "active_entry_price");
+            BlockedCsvAppend(header, first, "active_current_price");
+            BlockedCsvAppend(header, first, "active_initial_risk");
+            BlockedCsvAppend(header, first, "active_initial_risk_distance");
+            BlockedCsvAppend(header, first, "active_current_r");
+            BlockedCsvAppend(header, first, "active_sl");
+            BlockedCsvAppend(header, first, "active_is_be");
+            BlockedCsvAppend(header, first, "active_tp1_done");
+            BlockedCsvAppend(header, first, "active_tp2_done");
+            BlockedCsvAppend(header, first, "active_runner_active");
+            BlockedCsvAppend(header, first, "active_pyramid_adds");
+            BlockedCsvAppend(header, first, "active_bars_open");
+            BlockedCsvAppend(header, first, "active_locked_profit_r");
+            BlockedCsvAppend(header, first, "active_group_volume");
+            BlockedCsvAppend(header, first, "active_value_at_event_r");
+            BlockedCsvAppend(header, first, "active_value_6bar_r");
+            BlockedCsvAppend(header, first, "active_value_12bar_r");
+            BlockedCsvAppend(header, first, "active_value_24bar_r");
+            BlockedCsvAppend(header, first, "active_value_48bar_r");
+            BlockedCsvAppend(header, first, "active_continuation_6bar_r");
+            BlockedCsvAppend(header, first, "active_continuation_12bar_r");
+            BlockedCsvAppend(header, first, "active_continuation_24bar_r");
+            BlockedCsvAppend(header, first, "active_continuation_48bar_r");
+            BlockedCsvAppend(header, first, "active_plus_1r_hit");
+            BlockedCsvAppend(header, first, "active_minus_1r_hit");
+            BlockedCsvAppend(header, first, "active_first_hit");
+            BlockedCsvAppend(header, first, "shadow_plus_1r_hit");
+            BlockedCsvAppend(header, first, "shadow_minus_1r_hit");
+            BlockedCsvAppend(header, first, "shadow_plus_1r_first");
+            BlockedCsvAppend(header, first, "shadow_minus_1r_first");
+            BlockedCsvAppend(header, first, "shadow_first_hit");
+            BlockedCsvAppend(header, first, "shadow_mfe_r");
+            BlockedCsvAppend(header, first, "shadow_mae_r");
+            BlockedCsvAppend(header, first, "shadow_return_6bar_r");
+            BlockedCsvAppend(header, first, "shadow_return_12bar_r");
+            BlockedCsvAppend(header, first, "shadow_return_24bar_r");
+            BlockedCsvAppend(header, first, "shadow_return_48bar_r");
+            BlockedCsvAppend(header, first, "actual_selected_build_valid");
+            BlockedCsvAppend(header, first, "actual_selected_entry_price");
+            BlockedCsvAppend(header, first, "actual_selected_initial_sl");
+            BlockedCsvAppend(header, first, "actual_selected_risk_distance");
+            BlockedCsvAppend(header, first, "actual_selected_plus_1r_hit");
+            BlockedCsvAppend(header, first, "actual_selected_minus_1r_hit");
+            BlockedCsvAppend(header, first, "actual_selected_plus_1r_first");
+            BlockedCsvAppend(header, first, "actual_selected_minus_1r_first");
+            BlockedCsvAppend(header, first, "actual_selected_first_hit");
+            BlockedCsvAppend(header, first, "actual_selected_mfe_r");
+            BlockedCsvAppend(header, first, "actual_selected_mae_r");
+            BlockedCsvAppend(header, first, "actual_selected_return_6bar_r");
+            BlockedCsvAppend(header, first, "actual_selected_return_12bar_r");
+            BlockedCsvAppend(header, first, "actual_selected_return_24bar_r");
+            BlockedCsvAppend(header, first, "actual_selected_return_48bar_r");
+            BlockedCsvAppend(header, first, "opportunity_diff_6bar_r");
+            BlockedCsvAppend(header, first, "opportunity_diff_12bar_r");
+            BlockedCsvAppend(header, first, "opportunity_diff_24bar_r");
+            BlockedCsvAppend(header, first, "opportunity_diff_48bar_r");
+            BlockedCsvAppend(header, first, "age_bars");
+            BlockedCsvAppend(header, first, "completed");
+            BlockedCsvAppend(header, first, "incomplete_reason");
+            FileWriteString(blockedSignalShadowCsvHandle, header + "\r\n");
+         }
+      }
+      else
+      {
+         Print("Could not open Mentor_RSI_MTF_v82_blocked_signals.csv for V82 export.");
+      }
+   }
+
    if(PyramidShadowMode == PYRAMID_SHADOW_ADD1_AUDIT && ExportPyramidShadowCsv)
    {
       pyramidShadowCsvHandle = OpenObservationCsvFile("Mentor_RSI_MTF_pyramid_shadow.csv");
@@ -1117,6 +1411,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    FlushIncompleteShadowEvents();
+   FlushIncompleteBlockedSignalShadowEvents();
    FlushIncompletePyramidShadowEvents();
    FlushIncompleteCoreExitShadowEvents();
    PrintDiagnosticsSummary("OnDeinit");
@@ -1153,6 +1448,12 @@ void OnDeinit(const int reason)
       coreExitShadowCsvHandle = INVALID_HANDLE;
    }
 
+   if(blockedSignalShadowCsvHandle != INVALID_HANDLE)
+   {
+      FileClose(blockedSignalShadowCsvHandle);
+      blockedSignalShadowCsvHandle = INVALID_HANDLE;
+   }
+
    for(int i = 0; i < 4; i++)
    {
       if(rsiHandles[i] != INVALID_HANDLE)
@@ -1185,6 +1486,7 @@ void OnTick()
    lastEntryBarTime = barTime;
 
    AuditShadowSignalsOnClosedBar();
+   AuditBlockedSignalShadowOnClosedBar();
 
    TFState fanEntry;
    ZeroMemory(fanEntry);
@@ -2107,6 +2409,1353 @@ void AuditShadowSignalsOnClosedBar()
                      hasLivePosition, livePositionType, d1, h4, h1, entry);
    TrackShadowSignal(false, shortValid, longValid, shortValid, longReject, shortReject,
                      hasLivePosition, livePositionType, d1, h4, h1, entry);
+}
+
+// ---------------------------------------------------------------------------
+// V82 blocked-signal and opportunity-cost shadow audit
+// ---------------------------------------------------------------------------
+// This section is deliberately separate from the V81 ShadowEvent machinery.
+// It owns its setup state, never calls UpdateArmedState(), never calls trade.*,
+// and only observes closed EntryTF bars.  The real execution state above is
+// therefore not a source of mutable shadow state and is not a destination for
+// shadow writes.
+
+string BlockedShadowValue(double value)
+{
+   if(value == EMPTY_VALUE || !MathIsValidNumber(value))
+      return "";
+   return DoubleToString(value, 6);
+}
+
+void BlockedCsvAppend(string &line, bool &first, string value)
+{
+   if(!first)
+      line += ",";
+   line += value;
+   first = false;
+}
+
+string BlockedCsvTime(datetime value)
+{
+   return (value == 0) ? "" : TimeToString(value);
+}
+
+string BlockedCsvBool(bool value)
+{
+   return value ? "true" : "false";
+}
+
+string BlockedShadowYear(datetime value)
+{
+   MqlDateTime date;
+   ZeroMemory(date);
+   if(value == 0 || !TimeToStruct(value, date))
+      return "unknown";
+   return IntegerToString(date.year);
+}
+
+string BlockedShadowFold(datetime value)
+{
+   MqlDateTime date;
+   ZeroMemory(date);
+   if(value == 0 || !TimeToStruct(value, date))
+      return "other";
+   if(date.year == 2023 || date.year == 2024)
+      return "validation_2023_2024";
+   if(date.year >= 2025)
+      return "oos_2025_plus";
+   return "other";
+}
+
+string BlockedShadowDirection(string eventType, string activeSide, string shadowSide,
+                              string actualSelectedSide)
+{
+   if(eventType == "BLOCKED_OPPOSITE")
+      return activeSide + "_active_to_" + shadowSide + "_blocked";
+   if(eventType == "BLOCKED_SAME_SIDE")
+      return activeSide + "_active_to_" + shadowSide + "_blocked";
+   if(eventType == "SIMULTANEOUS_CONFLICT")
+      return "FLAT_" + actualSelectedSide + "_selected_to_" + shadowSide + "_blocked";
+   if(eventType == "LONG_ONLY" || eventType == "SHORT_ONLY")
+      return eventType;
+   return "OTHER";
+}
+
+void ResetActiveTradeSnapshot(ActiveTradeSnapshot &snapshot)
+{
+   ZeroMemory(snapshot);
+   snapshot.valid = false;
+   snapshot.positionType = -1;
+   snapshot.groupId = "NONE";
+}
+
+bool SnapshotHasIdentifier(const ActiveTradeSnapshot &snapshot, long identifier)
+{
+   if(identifier <= 0)
+      return false;
+   for(int i = 0; i < snapshot.positionCount; i++)
+      if(snapshot.positionIdentifiers[i] == identifier)
+         return true;
+   return false;
+}
+
+bool AddSnapshotPosition(ActiveTradeSnapshot &snapshot, ulong ticket)
+{
+   if(ticket == 0 || !PositionSelectByTicket(ticket) || !SelectedPositionIsManaged())
+      return false;
+
+   long positionType = PositionGetInteger(POSITION_TYPE);
+   if(snapshot.positionType < 0)
+      snapshot.positionType = positionType;
+   if(positionType != snapshot.positionType)
+      return false;
+
+   long identifier = (long)PositionGetInteger(POSITION_IDENTIFIER);
+   if(identifier <= 0)
+      identifier = (long)ticket;
+   if(SnapshotHasIdentifier(snapshot, identifier))
+      return true;
+   if(snapshot.positionCount >= 4)
+      return false;
+
+   int index = snapshot.positionCount;
+   snapshot.positionTickets[index] = ticket;
+   snapshot.positionIdentifiers[index] = identifier;
+   snapshot.positionCount++;
+   return true;
+}
+
+bool BuildActiveTradeSnapshot(ActiveTradeSnapshot &snapshot, bool &hasManagedPosition)
+{
+   ResetActiveTradeSnapshot(snapshot);
+   hasManagedPosition = false;
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || !SelectedPositionIsManaged())
+         continue;
+      hasManagedPosition = true;
+      if(!AddSnapshotPosition(snapshot, ticket))
+      {
+         diagBlockedSignalShadowBuildFailures++;
+         return false;
+      }
+   }
+
+   if(!hasManagedPosition)
+      return true;
+   if(snapshot.positionCount < 1 || snapshot.positionType < 0)
+      return false;
+
+   // Keep the group identity deterministic even when MT5 enumerates hedging
+   // tickets in a different order between tester passes.
+   for(int i = 0; i < snapshot.positionCount - 1; i++)
+   {
+      for(int j = i + 1; j < snapshot.positionCount; j++)
+      {
+         if(snapshot.positionIdentifiers[j] >= snapshot.positionIdentifiers[i])
+            continue;
+         long identifier = snapshot.positionIdentifiers[i];
+         snapshot.positionIdentifiers[i] = snapshot.positionIdentifiers[j];
+         snapshot.positionIdentifiers[j] = identifier;
+         ulong ticket = snapshot.positionTickets[i];
+         snapshot.positionTickets[i] = snapshot.positionTickets[j];
+         snapshot.positionTickets[j] = ticket;
+      }
+   }
+
+   double oldestTime = 0.0;
+   double oldestEntry = 0.0;
+   double firstSL = 0.0;
+   double groupVolume = 0.0;
+   double longWorstSL = 0.0;
+   double shortWorstSL = 0.0;
+   bool firstPosition = true;
+
+   for(int i = 0; i < snapshot.positionCount; i++)
+   {
+      if(!PositionSelectByTicket(snapshot.positionTickets[i]))
+         continue;
+
+      double positionEntry = PositionGetDouble(POSITION_PRICE_OPEN);
+      double positionVolume = PositionGetDouble(POSITION_VOLUME);
+      double positionSL = PositionGetDouble(POSITION_SL);
+      datetime positionTime = (datetime)PositionGetInteger(POSITION_TIME);
+      groupVolume += positionVolume;
+
+      if(firstPosition || positionTime < (datetime)oldestTime)
+      {
+         oldestTime = (double)positionTime;
+         oldestEntry = positionEntry;
+         firstSL = positionSL;
+         firstPosition = false;
+      }
+
+      if(positionSL > 0.0)
+      {
+         if(snapshot.positionType == POSITION_TYPE_BUY)
+         {
+            if(longWorstSL <= 0.0 || positionSL < longWorstSL)
+               longWorstSL = positionSL;
+         }
+         else
+         {
+            if(shortWorstSL <= 0.0 || positionSL > shortWorstSL)
+               shortWorstSL = positionSL;
+         }
+      }
+   }
+
+   if(firstPosition || groupVolume <= 0.0 || oldestEntry <= 0.0)
+      return false;
+
+   snapshot.valid = true;
+   snapshot.side = ShadowPositionSide(snapshot.positionType);
+   snapshot.entryTime = (datetime)oldestTime;
+   snapshot.entryPrice = oldestEntry;
+   snapshot.groupVolume = groupVolume;
+   snapshot.currentSL = (snapshot.positionType == POSITION_TYPE_BUY) ? longWorstSL : shortWorstSL;
+   if(snapshot.currentSL <= 0.0)
+      snapshot.currentSL = firstSL;
+
+   bool pyramidGroup = (UsePyramiding && pyramidCycleActive && pyramidInitialRiskDistance > _Point);
+   if(pyramidGroup)
+   {
+      snapshot.entryPrice = pyramidBaseEntry;
+      snapshot.initialRiskDistance = pyramidInitialRiskDistance;
+      snapshot.initialRiskMoney = pyramidBaseRiskMoney;
+   }
+   else
+   {
+      snapshot.initialRiskDistance = managedInitialRiskDistance;
+      if(snapshot.initialRiskDistance <= _Point)
+         snapshot.initialRiskDistance = MathAbs(snapshot.entryPrice - firstSL);
+      double initialVolume = initialPositionVolume > 0.0 ? initialPositionVolume : groupVolume;
+      snapshot.initialRiskMoney = RiskMoneyForDistance(initialVolume, snapshot.initialRiskDistance);
+   }
+
+   if(snapshot.initialRiskDistance <= _Point || snapshot.initialRiskMoney <= 0.0)
+      return false;
+
+   string groupId = "G";
+   for(int i = 0; i < snapshot.positionCount; i++)
+      groupId += "_" + IntegerToString(snapshot.positionIdentifiers[i]);
+   snapshot.groupId = groupId;
+   snapshot.tp1Done = tp1Done;
+   snapshot.tp2Done = tp2Done;
+   snapshot.runnerActive = (tp1Done || tp2Done);
+   snapshot.pyramidAdds = (pyramidGroup ? pyramidAddCount : 0);
+   int barsOpen = iBarShift(_Symbol, EntryTF, snapshot.entryTime, false);
+   snapshot.barsOpen = (barsOpen >= 0) ? barsOpen : 0;
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   snapshot.currentPrice = (snapshot.positionType == POSITION_TYPE_BUY) ? bid : ask;
+   if(snapshot.currentPrice <= 0.0)
+      return false;
+
+   bool valueAvailable = false;
+   double currentValue = ActiveSnapshotValueAtPrice(snapshot, snapshot.currentPrice, valueAvailable);
+   if(valueAvailable)
+      snapshot.currentR = currentValue / snapshot.initialRiskMoney;
+   else
+      snapshot.currentR = EMPTY_VALUE;
+
+   snapshot.isBE = (snapshot.positionType == POSITION_TYPE_BUY) ?
+                   (snapshot.currentSL > 0.0 && snapshot.currentSL >= snapshot.entryPrice) :
+                   (snapshot.currentSL > 0.0 && snapshot.currentSL <= snapshot.entryPrice);
+   valueAvailable = false;
+   double lockedValue = ActiveSnapshotValueAtPrice(snapshot, snapshot.currentSL, valueAvailable);
+   if(valueAvailable && snapshot.currentSL > 0.0)
+      snapshot.lockedProfitR = lockedValue / snapshot.initialRiskMoney;
+   else
+      snapshot.lockedProfitR = EMPTY_VALUE;
+
+   return true;
+}
+
+bool SameSnapshotIdentifier(const ActiveTradeSnapshot &snapshot, int index, long identifier)
+{
+   for(int i = 0; i < index; i++)
+      if(snapshot.positionIdentifiers[i] == identifier)
+         return true;
+   return false;
+}
+
+double HistoryNetValueForPosition(long identifier, bool &available)
+{
+   if(identifier <= 0)
+   {
+      available = false;
+      return 0.0;
+   }
+   if(!HistorySelectByPosition((ulong)identifier))
+   {
+      available = false;
+      return 0.0;
+   }
+
+   double value = 0.0;
+   for(int i = 0; i < HistoryDealsTotal(); i++)
+   {
+      ulong deal = HistoryDealGetTicket(i);
+      if(deal == 0)
+         continue;
+      value += HistoryDealGetDouble(deal, DEAL_PROFIT);
+      value += HistoryDealGetDouble(deal, DEAL_COMMISSION);
+      value += HistoryDealGetDouble(deal, DEAL_SWAP);
+      value += HistoryDealGetDouble(deal, DEAL_FEE);
+   }
+   if(!MathIsValidNumber(value))
+      available = false;
+   return value;
+}
+
+double ActiveSnapshotValueAtPrice(const ActiveTradeSnapshot &snapshot, double price, bool &available)
+{
+   available = false;
+   if(!snapshot.valid || price <= 0.0 || snapshot.initialRiskMoney <= 0.0)
+      return 0.0;
+
+   double value = 0.0;
+   bool allHistoryAvailable = true;
+   for(int i = 0; i < snapshot.positionCount; i++)
+   {
+      long identifier = snapshot.positionIdentifiers[i];
+      if(SameSnapshotIdentifier(snapshot, i, identifier))
+         continue;
+      bool historyAvailable = true;
+      value += HistoryNetValueForPosition(identifier, historyAvailable);
+      if(!historyAvailable)
+         allHistoryAvailable = false;
+   }
+
+   bool foundOpenPosition = false;
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket) || !SelectedPositionIsManaged())
+         continue;
+      long identifier = (long)PositionGetInteger(POSITION_IDENTIFIER);
+      if(!SnapshotHasIdentifier(snapshot, identifier))
+         continue;
+
+      ENUM_ORDER_TYPE type = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ?
+                             ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      double pnl = 0.0;
+      if(!OrderCalcProfit(type, _Symbol, PositionGetDouble(POSITION_VOLUME),
+                          PositionGetDouble(POSITION_PRICE_OPEN), price, pnl))
+      {
+         allHistoryAvailable = false;
+         continue;
+      }
+      value += pnl + PositionGetDouble(POSITION_SWAP);
+      foundOpenPosition = true;
+   }
+
+   // A closed group has no live position, but its realized deal history is the
+   // exact carry-forward value for every later horizon.
+   available = allHistoryAvailable && (foundOpenPosition || snapshot.positionCount > 0);
+   return value;
+}
+
+bool InitialSLAtClosedBar(ENUM_ORDER_TYPE type, double &stopLoss)
+{
+   stopLoss = 0.0;
+   if(SwingLookbackBars < 1)
+      return false;
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, EntryTF, 1, SwingLookbackBars, rates) < SwingLookbackBars)
+      return false;
+
+   if(type == ORDER_TYPE_BUY)
+   {
+      double low = rates[0].low;
+      for(int i = 1; i < SwingLookbackBars; i++)
+         low = MathMin(low, rates[i].low);
+      stopLoss = NormalizeDouble(low - SLBufferPoints * _Point, _Digits);
+   }
+   else
+   {
+      double high = rates[0].high;
+      for(int i = 1; i < SwingLookbackBars; i++)
+         high = MathMax(high, rates[i].high);
+      stopLoss = NormalizeDouble(high + SLBufferPoints * _Point, _Digits);
+   }
+   return (stopLoss > 0.0 && MathIsValidNumber(stopLoss));
+}
+
+bool BuildBlockedHypothetical(bool longSide, double &entryPrice, double &initialSL,
+                              double &riskDistance, string &reason)
+{
+   entryPrice = longSide ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   initialSL = 0.0;
+   riskDistance = 0.0;
+   reason = "";
+   if(entryPrice <= 0.0 || !MathIsValidNumber(entryPrice))
+   {
+      reason = "invalid_entry_price";
+      return false;
+   }
+
+   if(!InitialSLAtClosedBar(longSide ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, initialSL))
+   {
+      reason = "invalid_initial_sl_data";
+      return false;
+   }
+   riskDistance = MathAbs(entryPrice - initialSL);
+   if(riskDistance <= _Point || !MathIsValidNumber(riskDistance))
+   {
+      reason = "invalid_risk_distance";
+      return false;
+   }
+   return true;
+}
+
+bool HasVolumeSpikeClosed(const MqlRates &rates[])
+{
+   if(!UseVolumeFilter)
+      return true;
+   if(VolumeMAPeriod < 1 || ArraySize(rates) < VolumeMAPeriod + 1)
+      return false;
+
+   double sum = 0.0;
+   for(int i = 1; i <= VolumeMAPeriod; i++)
+      sum += (double)rates[i].tick_volume;
+   double average = sum / VolumeMAPeriod;
+   return ((double)rates[0].tick_volume >= average * VolumeSpikeMultiplier);
+}
+
+bool BuildClosedState(ENUM_TIMEFRAMES tf, TFState &s)
+{
+   int idx = TfIndex(tf);
+   if(idx < 0)
+      return false;
+
+   const int need = 260;
+   double rsi[];
+   double atr[];
+   MqlRates rates[];
+   ArraySetAsSeries(rsi, true);
+   ArraySetAsSeries(atr, true);
+   ArraySetAsSeries(rates, true);
+
+   // The first element is shift 1.  No V82 signal field is derived from bar 0.
+   if(CopyBuffer(rsiHandles[idx], 0, 1, need, rsi) < need)
+      return false;
+   if(CopyBuffer(atrHandles[idx], 0, 1, need, atr) < need)
+      return false;
+   if(CopyRates(_Symbol, tf, 1, need, rates) < need)
+      return false;
+
+   s.tf = tf;
+   s.rsi1 = rsi[0];
+   s.rsi2 = rsi[1];
+   s.ema1 = EMAOnSeries(rsi, RSI_EMA_Period, 0, need);
+   s.ema2 = EMAOnSeries(rsi, RSI_EMA_Period, 1, need);
+   s.wma1 = WMAOnSeries(rsi, RSI_WMA_Period, 0, need);
+   s.wma2 = WMAOnSeries(rsi, RSI_WMA_Period, 1, need);
+   s.atr1 = atr[0];
+   s.crossRSIUpEMA = (s.rsi2 <= s.ema2 && s.rsi1 > s.ema1);
+   s.crossRSIDownEMA = (s.rsi2 >= s.ema2 && s.rsi1 < s.ema1);
+   s.crossRSIUpWMA = (s.rsi2 <= s.wma2 && s.rsi1 > s.wma1);
+   s.crossRSIDownWMA = (s.rsi2 >= s.wma2 && s.rsi1 < s.wma1);
+   s.crossEMAUpWMA = (s.ema2 <= s.wma2 && s.ema1 > s.wma1);
+   s.crossEMADownWMA = (s.ema2 >= s.wma2 && s.ema1 < s.wma1);
+   s.extremeLowRecent = RecentRSIExtreme(rsi, 0, LookbackExtremeBars, LongArmLevel, true);
+   s.extremeHighRecent = RecentRSIExtreme(rsi, 0, LookbackExtremeBars, ShortArmLevel, false);
+   s.pullbackLongRecent = RecentRSIExtreme(rsi, 0, PullbackLookbackBars, PullbackLongLevel, true);
+   s.pullbackShortRecent = RecentRSIExtreme(rsi, 0, PullbackLookbackBars, PullbackShortLevel, false);
+   s.chop = IsChop(s);
+   s.volumeSpike = HasVolumeSpikeClosed(rates);
+   s.bias = GetBias(s);
+   return true;
+}
+
+bool RSICrossEMAWithinClosedBars(ENUM_TIMEFRAMES tf, bool up, int bars)
+{
+   int idx = TfIndex(tf);
+   if(idx < 0 || bars < 0)
+      return false;
+
+   double rsi[];
+   ArraySetAsSeries(rsi, true);
+   const int need = 120;
+   if(CopyBuffer(rsiHandles[idx], 0, 1, need, rsi) < need)
+      return false;
+
+   for(int shift = 0; shift <= bars; shift++)
+   {
+      double emaA = EMAOnSeries(rsi, RSI_EMA_Period, shift, need);
+      double emaB = EMAOnSeries(rsi, RSI_EMA_Period, shift + 1, need);
+      if(up && rsi[shift + 1] <= emaB && rsi[shift] > emaA)
+         return true;
+      if(!up && rsi[shift + 1] >= emaB && rsi[shift] < emaA)
+         return true;
+   }
+   return false;
+}
+
+bool BlockedLongSetupActive(const BlockedShadowSetupState &state, const TFState &entry)
+{
+   if(EntryMode == RSI_PULLBACK_CONTINUATION)
+      return (state.longArmedBars > 0 || entry.pullbackLongRecent);
+   return (state.longArmedBars > 0);
+}
+
+bool BlockedShortSetupActive(const BlockedShadowSetupState &state, const TFState &entry)
+{
+   if(EntryMode == RSI_PULLBACK_CONTINUATION)
+      return (state.shortArmedBars > 0 || entry.pullbackShortRecent);
+   return (state.shortArmedBars > 0);
+}
+
+void UpdateBlockedShadowSetupState(BlockedShadowSetupState &state, const TFState &entry)
+{
+   bool wasLongActive = (state.longArmedBars > 0);
+   bool wasShortActive = (state.shortArmedBars > 0);
+
+   if(entry.extremeLowRecent || entry.rsi1 <= LongArmLevel)
+      state.longArmedBars = MaxSetupAgeBars;
+   else if(state.longArmedBars > 0)
+      state.longArmedBars--;
+
+   if(entry.extremeHighRecent || entry.rsi1 >= ShortArmLevel)
+      state.shortArmedBars = MaxSetupAgeBars;
+   else if(state.shortArmedBars > 0)
+      state.shortArmedBars--;
+
+   bool isLongActive = BlockedLongSetupActive(state, entry);
+   bool isShortActive = BlockedShortSetupActive(state, entry);
+   if(!wasLongActive && isLongActive)
+      state.longSetupGeneration++;
+   if(!wasShortActive && isShortActive)
+      state.shortSetupGeneration++;
+}
+
+bool BlockedLongSignal(const BlockedShadowSetupState &state, const TFState &entry,
+                       const TFState &d1, const TFState &h4, const TFState &h1,
+                       bool biasOK, bool regimeOK, string &reject)
+{
+   if(!BlockedLongSetupActive(state, entry))
+   {
+      reject = "not_armed";
+      return false;
+   }
+   if(!biasOK)
+   {
+      reject = "bias";
+      return false;
+   }
+   if(!regimeOK)
+   {
+      reject = "regime_long";
+      return false;
+   }
+   if(!LongQualityAllows(entry, d1, h4, h1))
+   {
+      reject = "long_quality";
+      return false;
+   }
+   if(entry.chop)
+   {
+      reject = "chop";
+      return false;
+   }
+   if(UseVolumeFilter && !entry.volumeSpike)
+   {
+      reject = "volume";
+      return false;
+   }
+   if(entry.rsi1 <= entry.rsi2)
+   {
+      reject = "curl";
+      return false;
+   }
+
+   if(EntryMode == RSI_CROSS_EMA)
+   {
+      bool crossed = entry.crossRSIUpEMA || RSICrossEMAWithinClosedBars(entry.tf, true, MaxBarsAfterCross);
+      if(!crossed)
+      {
+         reject = "cross";
+         return false;
+      }
+      if(entry.ema1 >= entry.wma1 || entry.crossEMAUpWMA || entry.rsi1 > entry.ema1)
+      {
+         reject = "";
+         return true;
+      }
+      reject = "cross";
+      return false;
+   }
+
+   if(EntryMode == RSI_PULLBACK_CONTINUATION)
+   {
+      if(entry.rsi1 > entry.ema1 && entry.ema1 >= entry.ema2)
+      {
+         reject = "";
+         return true;
+      }
+      reject = "ema_side";
+      return false;
+   }
+
+   if(entry.rsi1 > entry.ema1)
+   {
+      reject = "";
+      return true;
+   }
+   reject = "ema_side";
+   return false;
+}
+
+bool BlockedShortSignal(const BlockedShadowSetupState &state, const TFState &entry,
+                        const TFState &d1, const TFState &h4, const TFState &h1,
+                        bool biasOK, bool regimeOK, string &reject)
+{
+   if(!BlockedShortSetupActive(state, entry))
+   {
+      reject = "not_armed";
+      return false;
+   }
+   if(!biasOK)
+   {
+      reject = "bias";
+      return false;
+   }
+   if(!regimeOK)
+   {
+      reject = "regime_short";
+      return false;
+   }
+   if(!ShortQualityAllows(entry, d1, h4, h1))
+   {
+      reject = "short_quality";
+      return false;
+   }
+   if(entry.chop)
+   {
+      reject = "chop";
+      return false;
+   }
+   if(UseVolumeFilter && !entry.volumeSpike)
+   {
+      reject = "volume";
+      return false;
+   }
+   if(entry.rsi1 >= entry.rsi2)
+   {
+      reject = "curl";
+      return false;
+   }
+
+   if(EntryMode == RSI_CROSS_EMA)
+   {
+      bool crossed = entry.crossRSIDownEMA || RSICrossEMAWithinClosedBars(entry.tf, false, MaxBarsAfterCross);
+      if(!crossed)
+      {
+         reject = "cross";
+         return false;
+      }
+      if(entry.ema1 <= entry.wma1 || entry.crossEMADownWMA || entry.rsi1 < entry.ema1)
+      {
+         reject = "";
+         return true;
+      }
+      reject = "cross";
+      return false;
+   }
+
+   if(EntryMode == RSI_PULLBACK_CONTINUATION)
+   {
+      if(entry.rsi1 < entry.ema1 && entry.ema1 <= entry.ema2)
+      {
+         reject = "";
+         return true;
+      }
+      reject = "ema_side";
+      return false;
+   }
+
+   if(entry.rsi1 < entry.ema1)
+   {
+      reject = "";
+      return true;
+   }
+   reject = "ema_side";
+   return false;
+}
+
+void InitializeBlockedSignalShadowEvent(BlockedSignalShadowEvent &event)
+{
+   ZeroMemory(event);
+   event.activeSide = "NONE";
+   event.shadowSide = "NONE";
+   event.actualSelectedSide = "NONE";
+   event.blockedSide = "NONE";
+   event.activeGroupId = "NONE";
+   event.shadowFirstHit = "NONE";
+   event.activeFirstHit = "NONE";
+   event.actualSelectedFirstHit = "NONE";
+   event.shadowBuildValid = false;
+   event.actualSelectedBuildValid = false;
+   event.shadowEntryPrice = EMPTY_VALUE;
+   event.shadowSpread = EMPTY_VALUE;
+   event.shadowInitialSL = EMPTY_VALUE;
+   event.shadowRiskDistance = EMPTY_VALUE;
+   event.shadowEntryRSI = EMPTY_VALUE;
+   event.shadowEntryRSIEMA = EMPTY_VALUE;
+   event.shadowEntryRSIWMA = EMPTY_VALUE;
+   event.entryATRPct = EMPTY_VALUE;
+   event.entryATRRank = EMPTY_VALUE;
+   event.entryEfficiency20 = EMPTY_VALUE;
+   event.entrySpreadR = EMPTY_VALUE;
+   event.initialSLATR = EMPTY_VALUE;
+   event.activeEntryPrice = EMPTY_VALUE;
+   event.activeCurrentPrice = EMPTY_VALUE;
+   event.activeInitialRisk = EMPTY_VALUE;
+   event.activeInitialRiskDistance = EMPTY_VALUE;
+   event.activeCurrentR = EMPTY_VALUE;
+   event.activeSL = EMPTY_VALUE;
+   event.activeLockedProfitR = EMPTY_VALUE;
+   event.activeGroupVolume = EMPTY_VALUE;
+   event.activeValueAtEventR = EMPTY_VALUE;
+   event.activeValue6BarR = EMPTY_VALUE;
+   event.activeValue12BarR = EMPTY_VALUE;
+   event.activeValue24BarR = EMPTY_VALUE;
+   event.activeValue48BarR = EMPTY_VALUE;
+   event.activeContinuation6BarR = EMPTY_VALUE;
+   event.activeContinuation12BarR = EMPTY_VALUE;
+   event.activeContinuation24BarR = EMPTY_VALUE;
+   event.activeContinuation48BarR = EMPTY_VALUE;
+   event.shadowMFER = EMPTY_VALUE;
+   event.shadowMAER = EMPTY_VALUE;
+   event.shadowReturn6BarR = EMPTY_VALUE;
+   event.shadowReturn12BarR = EMPTY_VALUE;
+   event.shadowReturn24BarR = EMPTY_VALUE;
+   event.shadowReturn48BarR = EMPTY_VALUE;
+   event.actualSelectedEntryPrice = EMPTY_VALUE;
+   event.actualSelectedInitialSL = EMPTY_VALUE;
+   event.actualSelectedRiskDistance = EMPTY_VALUE;
+   event.actualSelectedMFER = EMPTY_VALUE;
+   event.actualSelectedMAER = EMPTY_VALUE;
+   event.actualSelectedReturn6BarR = EMPTY_VALUE;
+   event.actualSelectedReturn12BarR = EMPTY_VALUE;
+   event.actualSelectedReturn24BarR = EMPTY_VALUE;
+   event.actualSelectedReturn48BarR = EMPTY_VALUE;
+   event.opportunityDiff6BarR = EMPTY_VALUE;
+   event.opportunityDiff12BarR = EMPTY_VALUE;
+   event.opportunityDiff24BarR = EMPTY_VALUE;
+   event.opportunityDiff48BarR = EMPTY_VALUE;
+}
+
+string BlockedSignalEventId(datetime eventTime, string activeGroupId, string shadowSide, string eventType)
+{
+   return IntegerToString(eventTime) + "_" + activeGroupId + "_" + shadowSide + "_" + eventType;
+}
+
+bool BlockedSignalEventExists(string eventId)
+{
+   for(int i = 0; i < ArraySize(blockedSignalShadowEvents); i++)
+      if(blockedSignalShadowEvents[i].eventId == eventId)
+         return true;
+   return false;
+}
+
+void PopulateBlockedEventContext(BlockedSignalShadowEvent &event, const TFState &d1,
+                                 const TFState &h4, const TFState &h1, const TFState &entry)
+{
+   event.shadowEntryRSI = entry.rsi1;
+   event.shadowEntryRSIEMA = entry.ema1;
+   event.shadowEntryRSIWMA = entry.wma1;
+   event.d1Bias = BiasText(d1.bias);
+   event.h4Bias = BiasText(h4.bias);
+   event.h1Bias = BiasText(h1.bias);
+   event.d1RegimeScore = RegimeScore(d1);
+   event.h4RegimeScore = RegimeScore(h4);
+   event.compositeRegimeScore = CompositeRegimeScore(d1, h4);
+
+   if(event.shadowEntryPrice > 0.0 && entry.atr1 > 0.0)
+      event.entryATRPct = entry.atr1 / event.shadowEntryPrice * 100.0;
+   event.entryATRRank = ATRRankPercent(entry.tf, MarketStateATRRankBars);
+   event.entryEfficiency20 = PriceEfficiencyRatio(entry.tf, MarketStateEfficiencyBars);
+   if(entry.atr1 > _Point && event.shadowRiskDistance != EMPTY_VALUE)
+      event.initialSLATR = event.shadowRiskDistance / entry.atr1;
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(bid > 0.0 && ask > 0.0)
+      event.shadowSpread = ask - bid;
+   if(event.shadowRiskDistance != EMPTY_VALUE && event.shadowRiskDistance > _Point && bid > 0.0 && ask > 0.0)
+      event.entrySpreadR = (ask - bid) / event.shadowRiskDistance;
+}
+
+void PopulateBlockedActiveSnapshot(BlockedSignalShadowEvent &event, const ActiveTradeSnapshot &active)
+{
+   if(!active.valid)
+      return;
+
+   event.activeSide = active.side;
+   event.activeGroupId = active.groupId;
+   event.activeEntryPrice = active.entryPrice;
+   event.activeCurrentPrice = active.currentPrice;
+   event.activeInitialRisk = active.initialRiskMoney;
+   event.activeInitialRiskDistance = active.initialRiskDistance;
+   event.activeCurrentR = active.currentR;
+   event.activeSL = active.currentSL;
+   event.activeIsBE = active.isBE;
+   event.activeTP1Done = active.tp1Done;
+   event.activeTP2Done = active.tp2Done;
+   event.activeRunnerActive = active.runnerActive;
+   event.activePyramidAdds = active.pyramidAdds;
+   event.activeBarsOpen = active.barsOpen;
+   event.activeLockedProfitR = active.lockedProfitR;
+   event.activeGroupVolume = active.groupVolume;
+   event.activePositionCount = active.positionCount;
+   for(int i = 0; i < active.positionCount && i < 4; i++)
+      event.activePositionIdentifiers[i] = active.positionIdentifiers[i];
+
+   bool valueAvailable = false;
+   double value = ActiveSnapshotValueAtPrice(active, active.currentPrice, valueAvailable);
+   if(valueAvailable)
+   {
+      event.activeValueAtEventR = value / active.initialRiskMoney;
+      event.activeCurrentR = event.activeValueAtEventR;
+   }
+   else
+      diagBlockedSignalShadowAccountingFailures++;
+}
+
+void BuildActiveSnapshotFromEvent(const BlockedSignalShadowEvent &event, ActiveTradeSnapshot &snapshot)
+{
+   ResetActiveTradeSnapshot(snapshot);
+   if(event.activeSide == "NONE" || event.activeInitialRisk <= 0.0 || event.activePositionCount < 1)
+      return;
+
+   snapshot.valid = true;
+   snapshot.positionType = (event.activeSide == "LONG") ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
+   snapshot.side = event.activeSide;
+   snapshot.groupId = event.activeGroupId;
+   snapshot.entryPrice = event.activeEntryPrice;
+   snapshot.initialRiskMoney = event.activeInitialRisk;
+   snapshot.initialRiskDistance = event.activeInitialRiskDistance;
+   snapshot.positionCount = MathMin(event.activePositionCount, 4);
+   for(int i = 0; i < snapshot.positionCount; i++)
+      snapshot.positionIdentifiers[i] = event.activePositionIdentifiers[i];
+}
+
+string BuildBlockedSignalShadowCsvLine(const BlockedSignalShadowEvent &event)
+{
+   string line = "";
+   bool first = true;
+   BlockedCsvAppend(line, first, event.eventId);
+   BlockedCsvAppend(line, first, BlockedCsvTime(event.eventTime));
+   BlockedCsvAppend(line, first, BlockedCsvTime(event.entryBarTime));
+   BlockedCsvAppend(line, first, event.year);
+   BlockedCsvAppend(line, first, event.fold);
+   BlockedCsvAppend(line, first, event.side);
+   BlockedCsvAppend(line, first, event.eventType);
+   BlockedCsvAppend(line, first, event.activeSide);
+   BlockedCsvAppend(line, first, event.shadowSide);
+   BlockedCsvAppend(line, first, event.actualSelectedSide);
+   BlockedCsvAppend(line, first, event.blockedSide);
+   BlockedCsvAppend(line, first, event.direction);
+   BlockedCsvAppend(line, first, IntegerToString(event.setupGeneration));
+   BlockedCsvAppend(line, first, event.activeGroupId);
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowBuildValid));
+   BlockedCsvAppend(line, first, event.shadowBuildReason);
+   BlockedCsvAppend(line, first, event.longReject);
+   BlockedCsvAppend(line, first, event.shortReject);
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowEntryPrice));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowSpread));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowInitialSL));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowRiskDistance));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowEntryRSI));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowEntryRSIEMA));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowEntryRSIWMA));
+   BlockedCsvAppend(line, first, event.d1Bias);
+   BlockedCsvAppend(line, first, event.h4Bias);
+   BlockedCsvAppend(line, first, event.h1Bias);
+   BlockedCsvAppend(line, first, IntegerToString(event.d1RegimeScore));
+   BlockedCsvAppend(line, first, IntegerToString(event.h4RegimeScore));
+   BlockedCsvAppend(line, first, IntegerToString(event.compositeRegimeScore));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.entryATRPct));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.entryATRRank));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.entryEfficiency20));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.entrySpreadR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.initialSLATR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeEntryPrice));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeCurrentPrice));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeInitialRisk));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeInitialRiskDistance));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeCurrentR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeSL));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activeIsBE));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activeTP1Done));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activeTP2Done));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activeRunnerActive));
+   BlockedCsvAppend(line, first, IntegerToString(event.activePyramidAdds));
+   BlockedCsvAppend(line, first, IntegerToString(event.activeBarsOpen));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeLockedProfitR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeGroupVolume));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValueAtEventR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue6BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue12BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue24BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue48BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeContinuation6BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeContinuation12BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeContinuation24BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.activeContinuation48BarR));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activePlus1RHit));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.activeMinus1RHit));
+   BlockedCsvAppend(line, first, event.activeFirstHit);
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowPlus1RHit));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowMinus1RHit));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowPlus1RFirst));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowMinus1RFirst));
+   BlockedCsvAppend(line, first, event.shadowFirstHit);
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowMFER));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowMAER));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowReturn6BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowReturn12BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowReturn24BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.shadowReturn48BarR));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.actualSelectedBuildValid));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedEntryPrice));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedInitialSL));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedRiskDistance));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.actualSelectedPlus1RHit));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.actualSelectedMinus1RHit));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.actualSelectedPlus1RFirst));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.actualSelectedMinus1RFirst));
+   BlockedCsvAppend(line, first, event.actualSelectedFirstHit);
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedMFER));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedMAER));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedReturn6BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedReturn12BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedReturn24BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.actualSelectedReturn48BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.opportunityDiff6BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.opportunityDiff12BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.opportunityDiff24BarR));
+   BlockedCsvAppend(line, first, BlockedShadowValue(event.opportunityDiff48BarR));
+   BlockedCsvAppend(line, first, IntegerToString(event.ageBars));
+   BlockedCsvAppend(line, first, BlockedCsvBool(event.completed));
+   BlockedCsvAppend(line, first, event.completed ? "" :
+                    (event.shadowBuildValid ? "forward_window_incomplete" : event.shadowBuildReason));
+   return line;
+}
+
+void WriteBlockedSignalShadowEvent(int index)
+{
+   if(index < 0 || index >= ArraySize(blockedSignalShadowEvents) || blockedSignalShadowEvents[index].written)
+      return;
+
+   if(blockedSignalShadowCsvHandle != INVALID_HANDLE)
+   {
+      FileWriteString(blockedSignalShadowCsvHandle,
+                      BuildBlockedSignalShadowCsvLine(blockedSignalShadowEvents[index]) + "\r\n");
+   }
+   blockedSignalShadowEvents[index].written = true;
+}
+
+bool AddBlockedSignalShadowEvent(bool longSide, string eventType, int setupGeneration,
+                                 datetime eventTime, bool longValid, bool shortValid,
+                                 const string &longReject, const string &shortReject,
+                                 const ActiveTradeSnapshot &active,
+                                 const TFState &d1, const TFState &h4,
+                                 const TFState &h1, const TFState &entry)
+{
+   string shadowSide = longSide ? "LONG" : "SHORT";
+   string activeGroupId = active.valid ? active.groupId : "FLAT";
+   string eventId = BlockedSignalEventId(eventTime, activeGroupId, shadowSide, eventType);
+   if(BlockedSignalEventExists(eventId))
+   {
+      diagBlockedSignalShadowDuplicates++;
+      return false;
+   }
+
+   int index = ArraySize(blockedSignalShadowEvents);
+   ArrayResize(blockedSignalShadowEvents, index + 1);
+   InitializeBlockedSignalShadowEvent(blockedSignalShadowEvents[index]);
+   BlockedSignalShadowEvent event;
+   InitializeBlockedSignalShadowEvent(event);
+
+   event.eventId = eventId;
+   event.eventTime = eventTime;
+   event.entryBarTime = eventTime;
+   event.year = BlockedShadowYear(eventTime);
+   event.fold = BlockedShadowFold(eventTime);
+   event.side = shadowSide;
+   event.eventType = eventType;
+   event.activeSide = active.valid ? active.side : "NONE";
+   event.shadowSide = shadowSide;
+   event.setupGeneration = setupGeneration;
+   event.activeGroupId = active.valid ? active.groupId : "FLAT";
+   event.direction = BlockedShadowDirection(eventType, event.activeSide, shadowSide,
+                                             event.actualSelectedSide);
+   PopulateBlockedActiveSnapshot(event, active);
+   PopulateBlockedEventContext(event, d1, h4, h1, entry);
+
+   event.longReject = longReject;
+   event.shortReject = shortReject;
+
+   string buildReason = "";
+   double entryPrice = 0.0;
+   double initialSL = 0.0;
+   double riskDistance = 0.0;
+   bool buildValid = BuildBlockedHypothetical(longSide, entryPrice, initialSL, riskDistance, buildReason);
+   event.shadowEntryPrice = entryPrice;
+   event.shadowInitialSL = initialSL;
+   event.shadowRiskDistance = buildValid ? riskDistance : EMPTY_VALUE;
+   event.shadowBuildValid = buildValid;
+   event.shadowBuildReason = buildValid ? "" : buildReason;
+   PopulateBlockedEventContext(event, d1, h4, h1, entry);
+
+   if(buildValid)
+   {
+      event.shadowMFER = 0.0;
+      event.shadowMAER = 0.0;
+      event.shadowFirstHit = "NONE";
+   }
+   else
+   {
+      diagBlockedSignalShadowInvalid++;
+      diagBlockedSignalShadowBuildFailures++;
+   }
+
+   if(eventType == "SIMULTANEOUS_CONFLICT")
+   {
+      event.actualSelectedSide = "LONG";
+      event.blockedSide = shadowSide;
+      event.direction = BlockedShadowDirection(eventType, event.activeSide, shadowSide,
+                                                event.actualSelectedSide);
+      double actualEntry = 0.0;
+      double actualSL = 0.0;
+      double actualRisk = 0.0;
+      string actualReason = "";
+      event.actualSelectedBuildValid = BuildBlockedHypothetical(true, actualEntry, actualSL, actualRisk, actualReason);
+      event.actualSelectedEntryPrice = actualEntry;
+      event.actualSelectedInitialSL = actualSL;
+      event.actualSelectedRiskDistance = event.actualSelectedBuildValid ? actualRisk : EMPTY_VALUE;
+      if(event.actualSelectedBuildValid)
+      {
+         event.actualSelectedMFER = 0.0;
+         event.actualSelectedMAER = 0.0;
+         event.actualSelectedFirstHit = "NONE";
+      }
+   }
+   else if(eventType == "LONG_ONLY" || eventType == "SHORT_ONLY")
+   {
+      event.actualSelectedSide = shadowSide;
+      event.blockedSide = "NONE";
+      event.direction = eventType;
+   }
+   else
+   {
+      event.actualSelectedSide = "NONE";
+      event.blockedSide = shadowSide;
+   }
+
+   event.eventId = BlockedSignalEventId(eventTime, event.activeGroupId, shadowSide, eventType);
+   event.direction = BlockedShadowDirection(eventType, event.activeSide, shadowSide,
+                                             event.actualSelectedSide);
+   diagBlockedSignalShadowEvents++;
+   if(eventType == "BLOCKED_OPPOSITE")
+      diagBlockedSignalShadowOpposite++;
+   else if(eventType == "BLOCKED_SAME_SIDE")
+      diagBlockedSignalShadowSameSide++;
+   else if(eventType == "SIMULTANEOUS_CONFLICT")
+      diagBlockedSignalShadowConflicts++;
+   else
+      diagBlockedSignalShadowControls++;
+
+   blockedSignalShadowEvents[index] = event;
+   if(!buildValid)
+      WriteBlockedSignalShadowEvent(index);
+   return true;
+}
+
+void UpdateBlockedPricePath(bool longSide, double entryPrice, double riskDistance,
+                            const MqlRates &bar, bool &plusHit, bool &minusHit,
+                            bool &plusFirst, bool &minusFirst, string &firstHit,
+                            double &mfeR, double &maeR, double &return6R,
+                            double &return12R, double &return24R, double &return48R,
+                            int ageBars)
+{
+   if(entryPrice <= 0.0 || riskDistance <= _Point)
+      return;
+
+   double favorable = longSide ? (bar.high - entryPrice) / riskDistance :
+                                 (entryPrice - bar.low) / riskDistance;
+   double adverse = longSide ? (bar.low - entryPrice) / riskDistance :
+                               (entryPrice - bar.high) / riskDistance;
+   double closeR = longSide ? (bar.close - entryPrice) / riskDistance :
+                              (entryPrice - bar.close) / riskDistance;
+   mfeR = MathMax(mfeR, favorable);
+   maeR = MathMin(maeR, adverse);
+
+   bool touchedPlus = (favorable >= 1.0);
+   bool touchedMinus = (adverse <= -1.0);
+   plusHit = plusHit || touchedPlus;
+   minusHit = minusHit || touchedMinus;
+   if(firstHit == "NONE")
+   {
+      if(touchedPlus && touchedMinus)
+         firstHit = "AMBIGUOUS";
+      else if(touchedPlus)
+      {
+         firstHit = "PLUS_1R";
+         plusFirst = true;
+      }
+      else if(touchedMinus)
+      {
+         firstHit = "MINUS_1R";
+         minusFirst = true;
+      }
+   }
+
+   if(ageBars == 6)
+      return6R = closeR;
+   if(ageBars == 12)
+      return12R = closeR;
+   if(ageBars == 24)
+      return24R = closeR;
+   if(ageBars == 48)
+      return48R = closeR;
+}
+
+void UpdateBlockedSignalShadowEventsOnClosedBar()
+{
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_AUDIT || ArraySize(blockedSignalShadowEvents) == 0)
+      return;
+
+   MqlRates rates[];
+   ArraySetAsSeries(rates, true);
+   if(CopyRates(_Symbol, EntryTF, 1, 1, rates) < 1)
+      return;
+
+   for(int i = 0; i < ArraySize(blockedSignalShadowEvents); i++)
+   {
+      BlockedSignalShadowEvent event = blockedSignalShadowEvents[i];
+      if(event.completed || !event.shadowBuildValid)
+         continue;
+
+      event.ageBars++;
+      UpdateBlockedPricePath(event.side == "LONG", event.shadowEntryPrice, event.shadowRiskDistance,
+                             rates[0], event.shadowPlus1RHit, event.shadowMinus1RHit,
+                             event.shadowPlus1RFirst, event.shadowMinus1RFirst, event.shadowFirstHit,
+                             event.shadowMFER, event.shadowMAER, event.shadowReturn6BarR,
+                             event.shadowReturn12BarR, event.shadowReturn24BarR,
+                             event.shadowReturn48BarR, event.ageBars);
+
+      if(event.actualSelectedBuildValid)
+         UpdateBlockedPricePath(event.actualSelectedSide == "LONG", event.actualSelectedEntryPrice,
+                                event.actualSelectedRiskDistance, rates[0],
+                                event.actualSelectedPlus1RHit, event.actualSelectedMinus1RHit,
+                                event.actualSelectedPlus1RFirst, event.actualSelectedMinus1RFirst,
+                                event.actualSelectedFirstHit, event.actualSelectedMFER,
+                                event.actualSelectedMAER, event.actualSelectedReturn6BarR,
+                                event.actualSelectedReturn12BarR, event.actualSelectedReturn24BarR,
+                                event.actualSelectedReturn48BarR, event.ageBars);
+
+      if(event.activeSide != "NONE" && event.activeInitialRisk > 0.0 &&
+         event.activeValueAtEventR != EMPTY_VALUE)
+      {
+         ActiveTradeSnapshot active;
+         BuildActiveSnapshotFromEvent(event, active);
+         if(active.valid)
+         {
+            bool valueAvailable = false;
+            double activeValue = ActiveSnapshotValueAtPrice(active, rates[0].close, valueAvailable);
+            if(valueAvailable)
+            {
+               double activeValueR = activeValue / event.activeInitialRisk;
+               double continuationR = activeValueR - event.activeValueAtEventR;
+               if(activeValueR >= event.activeValueAtEventR + 1.0)
+                  event.activePlus1RHit = true;
+               if(activeValueR <= event.activeValueAtEventR - 1.0)
+                  event.activeMinus1RHit = true;
+               if(event.activeFirstHit == "NONE")
+               {
+                  if(event.activePlus1RHit && event.activeMinus1RHit)
+                     event.activeFirstHit = "AMBIGUOUS";
+                  else if(event.activePlus1RHit)
+                     event.activeFirstHit = "PLUS_1R";
+                  else if(event.activeMinus1RHit)
+                     event.activeFirstHit = "MINUS_1R";
+               }
+
+               if(event.ageBars == 6)
+               {
+                  event.activeValue6BarR = activeValueR;
+                  event.activeContinuation6BarR = continuationR;
+               }
+               if(event.ageBars == 12)
+               {
+                  event.activeValue12BarR = activeValueR;
+                  event.activeContinuation12BarR = continuationR;
+               }
+               if(event.ageBars == 24)
+               {
+                  event.activeValue24BarR = activeValueR;
+                  event.activeContinuation24BarR = continuationR;
+                  if(event.shadowReturn24BarR != EMPTY_VALUE)
+                     event.opportunityDiff24BarR = event.shadowReturn24BarR - continuationR;
+               }
+               if(event.ageBars == 48)
+               {
+                  event.activeValue48BarR = activeValueR;
+                  event.activeContinuation48BarR = continuationR;
+                  if(event.shadowReturn48BarR != EMPTY_VALUE)
+                     event.opportunityDiff48BarR = event.shadowReturn48BarR - continuationR;
+               }
+            }
+            else
+               diagBlockedSignalShadowAccountingFailures++;
+         }
+         else
+            diagBlockedSignalShadowAccountingFailures++;
+      }
+
+      if(event.activeSide != "NONE")
+      {
+         if(event.ageBars == 6 && event.shadowReturn6BarR != EMPTY_VALUE &&
+            event.activeContinuation6BarR != EMPTY_VALUE)
+            event.opportunityDiff6BarR = event.shadowReturn6BarR - event.activeContinuation6BarR;
+         if(event.ageBars == 12 && event.shadowReturn12BarR != EMPTY_VALUE &&
+            event.activeContinuation12BarR != EMPTY_VALUE)
+            event.opportunityDiff12BarR = event.shadowReturn12BarR - event.activeContinuation12BarR;
+      }
+
+      blockedSignalShadowEvents[i] = event;
+
+      if(event.ageBars >= BlockedSignalShadowForwardBars)
+      {
+         event.completed = true;
+         blockedSignalShadowEvents[i] = event;
+         diagBlockedSignalShadowCompleted++;
+         WriteBlockedSignalShadowEvent(i);
+      }
+   }
+}
+
+void FlushIncompleteBlockedSignalShadowEvents()
+{
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_AUDIT)
+      return;
+   for(int i = 0; i < ArraySize(blockedSignalShadowEvents); i++)
+      WriteBlockedSignalShadowEvent(i);
+}
+
+void AuditBlockedSignalShadowOnClosedBar()
+{
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_AUDIT)
+      return;
+
+   datetime barTime = iTime(_Symbol, EntryTF, 0);
+   if(barTime == 0 || barTime == lastBlockedSignalShadowBarTime)
+      return;
+   lastBlockedSignalShadowBarTime = barTime;
+
+   UpdateBlockedSignalShadowEventsOnClosedBar();
+
+   TFState d1, h4, h1, m15, entry;
+   if(!BuildClosedState(PERIOD_D1, d1) || !BuildClosedState(PERIOD_H4, h4) ||
+      !BuildClosedState(PERIOD_H1, h1) || !BuildClosedState(PERIOD_M15, m15) ||
+      !BuildClosedState(EntryTF, entry))
+   {
+      diagBlockedSignalShadowBuildFailures++;
+      blockedShadowState.lastLongSignal = false;
+      blockedShadowState.lastShortSignal = false;
+      return;
+   }
+
+   UpdateBlockedShadowSetupState(blockedShadowState, entry);
+   int bullCount = 0;
+   int bearCount = 0;
+   CountBias(d1, bullCount, bearCount);
+   CountBias(h4, bullCount, bearCount);
+   CountBias(h1, bullCount, bearCount);
+   bool longBias = BiasAllowsLong(d1, h4, h1, bullCount);
+   bool shortBias = BiasAllowsShort(d1, h4, h1, bearCount);
+   bool longRegime = RegimeAllowsLong(d1, h4);
+   bool shortRegime = RegimeAllowsShort(d1, h4);
+   string longReject = "";
+   string shortReject = "";
+   bool longValid = AllowLong && BlockedLongSignal(blockedShadowState, entry, d1, h4, h1,
+                                                   longBias, longRegime, longReject);
+   bool shortValid = AllowShort && BlockedShortSignal(blockedShadowState, entry, d1, h4, h1,
+                                                      shortBias, shortRegime, shortReject);
+
+   bool hasManagedPosition = false;
+   ActiveTradeSnapshot active;
+   if(!BuildActiveTradeSnapshot(active, hasManagedPosition))
+   {
+      if(hasManagedPosition)
+         diagBlockedSignalShadowAccountingFailures++;
+      return;
+   }
+
+   datetime eventTime = iTime(_Symbol, EntryTF, 1);
+   if(eventTime == 0)
+      eventTime = barTime;
+
+   bool freshLong = longValid && !blockedShadowState.lastLongSignal;
+   bool freshShort = shortValid && !blockedShadowState.lastShortSignal;
+   if(!hasManagedPosition)
+   {
+      // V26 evaluates Long before Short.  A simultaneous pair is represented
+      // by one conflict row whose shadow leg is the blocked Short.
+      if(longValid && shortValid && (freshLong || freshShort))
+      {
+         AddBlockedSignalShadowEvent(false, "SIMULTANEOUS_CONFLICT",
+                                     MathMax(blockedShadowState.longSetupGeneration,
+                                             blockedShadowState.shortSetupGeneration),
+                                     eventTime, longValid, shortValid, longReject, shortReject,
+                                     active, d1, h4, h1, entry);
+      }
+      else
+      {
+         if(freshLong)
+            AddBlockedSignalShadowEvent(true, "LONG_ONLY", blockedShadowState.longSetupGeneration,
+                                        eventTime, longValid, shortValid, longReject, shortReject,
+                                        active, d1, h4, h1, entry);
+         if(freshShort)
+            AddBlockedSignalShadowEvent(false, "SHORT_ONLY", blockedShadowState.shortSetupGeneration,
+                                        eventTime, longValid, shortValid, longReject, shortReject,
+                                        active, d1, h4, h1, entry);
+      }
+   }
+   else
+   {
+      if(freshLong)
+      {
+         string eventType = (active.positionType == POSITION_TYPE_BUY) ?
+                            "BLOCKED_SAME_SIDE" : "BLOCKED_OPPOSITE";
+         AddBlockedSignalShadowEvent(true, eventType, blockedShadowState.longSetupGeneration,
+                                     eventTime, longValid, shortValid, longReject, shortReject,
+                                     active, d1, h4, h1, entry);
+      }
+      if(freshShort)
+      {
+         string eventType = (active.positionType == POSITION_TYPE_SELL) ?
+                            "BLOCKED_SAME_SIDE" : "BLOCKED_OPPOSITE";
+         AddBlockedSignalShadowEvent(false, eventType, blockedShadowState.shortSetupGeneration,
+                                     eventTime, longValid, shortValid, longReject, shortReject,
+                                     active, d1, h4, h1, entry);
+      }
+   }
+
+   // Only the shadow domain is updated here.  The real armedLongBars and
+   // armedShortBars variables are intentionally never read or written.
+   blockedShadowState.lastLongSignal = longValid;
+   blockedShadowState.lastShortSignal = shortValid;
 }
 
 string PyramidShadowValue(double value)
@@ -5309,6 +6958,13 @@ string StandardDeviationShadowModeText()
    return "STDDEV_SHADOW_OFF";
 }
 
+string BlockedSignalShadowModeText()
+{
+   if(BlockedSignalShadowMode == BLOCKED_SIGNAL_SHADOW_AUDIT)
+      return "BLOCKED_SIGNAL_SHADOW_AUDIT";
+   return "BLOCKED_SIGNAL_SHADOW_OFF";
+}
+
 string EntryQualityGateModeText()
 {
    if(EntryQualityGateMode == ENTRY_QUALITY_GATE_ER20_LOW_VETO)
@@ -5502,6 +7158,22 @@ void PrintDiagnosticsSummary(string source)
    standardDeviation += " missing=" + IntegerToString(diagStandardDeviationMissing);
    standardDeviation += " buildFail=" + IntegerToString(diagStandardDeviationBuildFailures);
    Print(standardDeviation);
+
+   string blockedShadow = "DIAG_SUMMARY blockedSignalShadow source=" + source;
+   blockedShadow += " mode=" + BlockedSignalShadowModeText();
+   blockedShadow += " forwardBars=" + IntegerToString(BlockedSignalShadowForwardBars);
+   blockedShadow += " events=" + IntegerToString(diagBlockedSignalShadowEvents);
+   blockedShadow += " opposite=" + IntegerToString(diagBlockedSignalShadowOpposite);
+   blockedShadow += " sameSide=" + IntegerToString(diagBlockedSignalShadowSameSide);
+   blockedShadow += " conflicts=" + IntegerToString(diagBlockedSignalShadowConflicts);
+   blockedShadow += " controls=" + IntegerToString(diagBlockedSignalShadowControls);
+   blockedShadow += " completed=" + IntegerToString(diagBlockedSignalShadowCompleted);
+   blockedShadow += " invalid=" + IntegerToString(diagBlockedSignalShadowInvalid);
+   blockedShadow += " duplicates=" + IntegerToString(diagBlockedSignalShadowDuplicates);
+   blockedShadow += " buildFail=" + IntegerToString(diagBlockedSignalShadowBuildFailures);
+   blockedShadow += " accountingFail=" + IntegerToString(diagBlockedSignalShadowAccountingFailures);
+   blockedShadow += " csv=" + (ExportBlockedSignalShadowCsv ? "true" : "false");
+   Print(blockedShadow);
 
    string marketState = "DIAG_SUMMARY marketState source=" + source;
    marketState += " mode=" + MarketStateShadowModeText();

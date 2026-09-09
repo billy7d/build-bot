@@ -47,3 +47,28 @@ MT5 terminal phải được đóng trước khi chạy. Script chủ động d�
 
 Batch chỉ compile một lần, sau đó chạy tuần tự từng preset. Chạy tuần tự giúp mỗi report và Journal gắn đúng một cấu hình, đồng thời tránh xung đột terminal hoặc local-agent port. Khi cần tối ưu hàng loạt tổ hợp tham số, dùng chế độ Optimization của MT5 trong một test riêng thay vì mở nhiều terminal dùng chung một Wine prefix.
 
+## V82 blocked signal và opportunity cost
+
+Preset audit là `outputs/presets/82_v26_blocked_signal_shadow_audit.set`; preset
+control dùng cho regression là `outputs/presets/82_v26_blocked_signal_control_off.set`.
+Khi bật audit, EA ghi riêng `Mentor_RSI_MTF_v82_blocked_signals.csv`. Runner
+tự sao chép file thành `blocked-signal-shadow-signals.csv` và tạo JSON/Markdown
+summary trong thư mục kết quả.
+
+Có thể chạy lại summary bằng:
+
+```bash
+python3 tools/mt5/blocked_signal_summary.py \
+  backtests/<run>/blocked-signal-shadow-signals.csv \
+  --json-output backtests/<run>/blocked-signal-shadow-summary.json \
+  --markdown-output backtests/<run>/blocked-signal-shadow-summary.md
+```
+
+V82 giữ state setup độc lập với execution state, chỉ đọc nến `EntryTF` đã
+đóng, ghi `BLOCKED_OPPOSITE`, `BLOCKED_SAME_SIDE`,
+`SIMULTANEOUS_CONFLICT` và control `LONG_ONLY`/`SHORT_ONLY`. Event ID là
+deterministic theo `event_time + active_group_id + shadow_side + event_type`;
+một signal chỉ được ghi khi chuyển từ không hợp lệ sang hợp lệ trong cùng
+setup generation. Opportunity difference dùng shadow R và continuation R
+tăng thêm của active group sau thời điểm event; đây là telemetry nghiên cứu,
+không phải execution gate.
