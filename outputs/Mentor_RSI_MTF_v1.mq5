@@ -103,7 +103,7 @@ enum StandardDeviationShadowModeType
    STDDEV_SHADOW_AUDIT = 1
 };
 
-// V82 is observation-only.  It must never be used as an execution gate.
+// V82 chỉ quan sát, tuyệt đối không được dùng làm execution gate.
 enum BlockedSignalShadowModeType
 {
    BLOCKED_SIGNAL_SHADOW_OFF = 0,
@@ -179,8 +179,8 @@ input int StdDevSlowPricePeriod = 100;
 input int StdDevRSIPeriod = 20;
 input int StdDevRankBars = 480;
 
-// V82 blocked-signal/opportunity-cost audit.  This has a separate state domain
-// and CSV so enabling it cannot reset or otherwise alter V26 execution state.
+// Audit blocked-signal/opportunity-cost V82 dùng miền state và CSV riêng,
+// để bật telemetry không reset hoặc thay đổi execution state của V26.
 input BlockedSignalShadowModeType BlockedSignalShadowMode = BLOCKED_SIGNAL_SHADOW_OFF;
 input int BlockedSignalShadowForwardBars = 48;
 input bool ExportBlockedSignalShadowCsv = false;
@@ -457,6 +457,7 @@ struct ActiveTradeSnapshot
    long positionType;
    string side;
    string groupId;
+   long basePositionIdentifier;
    double entryPrice;
    double currentPrice;
    double initialRiskMoney;
@@ -493,6 +494,7 @@ struct BlockedSignalShadowEvent
    string direction;
    int setupGeneration;
    string activeGroupId;
+   long activeBasePositionIdentifier;
    bool shadowBuildValid;
    string shadowBuildReason;
    string longReject;
@@ -1277,6 +1279,7 @@ int OnInit()
             BlockedCsvAppend(header, first, "direction");
             BlockedCsvAppend(header, first, "setup_generation");
             BlockedCsvAppend(header, first, "active_group_id");
+            BlockedCsvAppend(header, first, "active_base_position_identifier");
             BlockedCsvAppend(header, first, "shadow_build_valid");
             BlockedCsvAppend(header, first, "shadow_build_reason");
             BlockedCsvAppend(header, first, "long_reject");
@@ -1313,6 +1316,7 @@ int OnInit()
             BlockedCsvAppend(header, first, "active_bars_open");
             BlockedCsvAppend(header, first, "active_locked_profit_r");
             BlockedCsvAppend(header, first, "active_group_volume");
+            BlockedCsvAppend(header, first, "active_position_count");
             BlockedCsvAppend(header, first, "active_value_at_event_r");
             BlockedCsvAppend(header, first, "active_value_6bar_r");
             BlockedCsvAppend(header, first, "active_value_12bar_r");
@@ -1475,6 +1479,7 @@ void OnTick()
    UpdateShadowEventsOnTick();
    UpdatePyramidShadowEventsOnTick();
    UpdateCoreExitShadowEventsOnTick();
+   UpdateBlockedSignalShadowGroupMembersOnTick();
    UpdatePyramidPeakEquity();
    AuditPyramidAdd1OnTick();
    AuditCoreExitSignalsOnClosedBar();
@@ -2412,13 +2417,11 @@ void AuditShadowSignalsOnClosedBar()
 }
 
 // ---------------------------------------------------------------------------
-// V82 blocked-signal and opportunity-cost shadow audit
+// Shadow audit V82 cho signal bị chặn và chi phí cơ hội
 // ---------------------------------------------------------------------------
-// This section is deliberately separate from the V81 ShadowEvent machinery.
-// It owns its setup state, never calls UpdateArmedState(), never calls trade.*,
-// and only observes closed EntryTF bars.  The real execution state above is
-// therefore not a source of mutable shadow state and is not a destination for
-// shadow writes.
+// Phần này tách khỏi machinery ShadowEvent của V81, tự sở hữu setup state,
+// không gọi UpdateArmedState()/trade.* và chỉ quan sát bar EntryTF đã đóng.
+// Vì vậy execution state thật không phải nguồn hoặc đích ghi của shadow.
 
 string BlockedShadowValue(double value)
 {
@@ -2487,6 +2490,7 @@ void ResetActiveTradeSnapshot(ActiveTradeSnapshot &snapshot)
    snapshot.valid = false;
    snapshot.positionType = -1;
    snapshot.groupId = "NONE";
+   snapshot.basePositionIdentifier = 0;
 }
 
 bool SnapshotHasIdentifier(const ActiveTradeSnapshot &snapshot, long identifier)
@@ -2548,8 +2552,7 @@ bool BuildActiveTradeSnapshot(ActiveTradeSnapshot &snapshot, bool &hasManagedPos
    if(snapshot.positionCount < 1 || snapshot.positionType < 0)
       return false;
 
-   // Keep the group identity deterministic even when MT5 enumerates hedging
-   // tickets in a different order between tester passes.
+   // Giữ group identity deterministic dù MT5 liệt kê ticket hedging khác thứ tự.
    for(int i = 0; i < snapshot.positionCount - 1; i++)
    {
       for(int j = i + 1; j < snapshot.positionCount; j++)
@@ -2625,6 +2628,8 @@ bool BuildActiveTradeSnapshot(ActiveTradeSnapshot &snapshot, bool &hasManagedPos
       snapshot.entryPrice = pyramidBaseEntry;
       snapshot.initialRiskDistance = pyramidInitialRiskDistance;
       snapshot.initialRiskMoney = pyramidBaseRiskMoney;
+      if(ArraySize(pyramidLegs) > 0)
+         snapshot.basePositionIdentifier = pyramidLegs[0].identifier;
    }
    else
    {
@@ -2637,6 +2642,9 @@ bool BuildActiveTradeSnapshot(ActiveTradeSnapshot &snapshot, bool &hasManagedPos
 
    if(snapshot.initialRiskDistance <= _Point || snapshot.initialRiskMoney <= 0.0)
       return false;
+
+   if(snapshot.basePositionIdentifier <= 0 && pyramidGroup && snapshot.positionCount > 0)
+      snapshot.basePositionIdentifier = snapshot.positionIdentifiers[0];
 
    string groupId = "G";
    for(int i = 0; i < snapshot.positionCount; i++)
@@ -2754,8 +2762,8 @@ double ActiveSnapshotValueAtPrice(const ActiveTradeSnapshot &snapshot, double pr
       foundOpenPosition = true;
    }
 
-   // A closed group has no live position, but its realized deal history is the
-   // exact carry-forward value for every later horizon.
+   // Group đã đóng không còn position live; deal history realized là giá trị
+   // carry-forward chính xác cho các horizon còn lại.
    available = allHistoryAvailable && (foundOpenPosition || snapshot.positionCount > 0);
    return value;
 }
@@ -2843,7 +2851,7 @@ bool BuildClosedState(ENUM_TIMEFRAMES tf, TFState &s)
    ArraySetAsSeries(atr, true);
    ArraySetAsSeries(rates, true);
 
-   // The first element is shift 1.  No V82 signal field is derived from bar 0.
+   // Phần tử đầu là shift 1; không có signal field V82 nào lấy từ bar 0.
    if(CopyBuffer(rsiHandles[idx], 0, 1, need, rsi) < need)
       return false;
    if(CopyBuffer(atrHandles[idx], 0, 1, need, atr) < need)
@@ -2915,8 +2923,8 @@ bool BlockedShortSetupActive(const BlockedShadowSetupState &state, const TFState
 
 void UpdateBlockedShadowSetupState(BlockedShadowSetupState &state, const TFState &entry)
 {
-   bool wasLongActive = (state.longArmedBars > 0);
-   bool wasShortActive = (state.shortArmedBars > 0);
+   bool wasLongActive = BlockedLongSetupActive(state, entry);
+   bool wasShortActive = BlockedShortSetupActive(state, entry);
 
    if(entry.extremeLowRecent || entry.rsi1 <= LongArmLevel)
       state.longArmedBars = MaxSetupAgeBars;
@@ -3201,6 +3209,7 @@ void PopulateBlockedActiveSnapshot(BlockedSignalShadowEvent &event, const Active
 
    event.activeSide = active.side;
    event.activeGroupId = active.groupId;
+   event.activeBasePositionIdentifier = active.basePositionIdentifier;
    event.activeEntryPrice = active.entryPrice;
    event.activeCurrentPrice = active.currentPrice;
    event.activeInitialRisk = active.initialRiskMoney;
@@ -3240,12 +3249,54 @@ void BuildActiveSnapshotFromEvent(const BlockedSignalShadowEvent &event, ActiveT
    snapshot.positionType = (event.activeSide == "LONG") ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
    snapshot.side = event.activeSide;
    snapshot.groupId = event.activeGroupId;
+   snapshot.basePositionIdentifier = event.activeBasePositionIdentifier;
    snapshot.entryPrice = event.activeEntryPrice;
    snapshot.initialRiskMoney = event.activeInitialRisk;
    snapshot.initialRiskDistance = event.activeInitialRiskDistance;
    snapshot.positionCount = MathMin(event.activePositionCount, 4);
    for(int i = 0; i < snapshot.positionCount; i++)
       snapshot.positionIdentifiers[i] = event.activePositionIdentifiers[i];
+}
+
+bool BlockedEventHasPositionIdentifier(const BlockedSignalShadowEvent &event, long identifier)
+{
+   if(identifier <= 0)
+      return false;
+   for(int i = 0; i < event.activePositionCount && i < 4; i++)
+      if(event.activePositionIdentifiers[i] == identifier)
+         return true;
+   return false;
+}
+
+void ExtendBlockedEventWithCurrentHedgingLegs(BlockedSignalShadowEvent &event)
+{
+   if(event.completed || event.activeSide == "NONE" || event.activeBasePositionIdentifier <= 0 ||
+      !IsHedgingPyramidMode() || !pyramidCycleActive || ArraySize(pyramidLegs) == 0 ||
+      pyramidLegs[0].identifier != event.activeBasePositionIdentifier)
+      return;
+
+   for(int i = 0; i < ArraySize(pyramidLegs); i++)
+   {
+      long identifier = pyramidLegs[i].identifier;
+      if(identifier <= 0 || BlockedEventHasPositionIdentifier(event, identifier))
+         continue;
+      if(event.activePositionCount >= 4)
+      {
+         diagBlockedSignalShadowAccountingFailures++;
+         return;
+      }
+      event.activePositionIdentifiers[event.activePositionCount] = identifier;
+      event.activePositionCount++;
+   }
+}
+
+void UpdateBlockedSignalShadowGroupMembersOnTick()
+{
+   if(BlockedSignalShadowMode != BLOCKED_SIGNAL_SHADOW_AUDIT)
+      return;
+
+   for(int i = 0; i < ArraySize(blockedSignalShadowEvents); i++)
+      ExtendBlockedEventWithCurrentHedgingLegs(blockedSignalShadowEvents[i]);
 }
 
 string BuildBlockedSignalShadowCsvLine(const BlockedSignalShadowEvent &event)
@@ -3266,6 +3317,7 @@ string BuildBlockedSignalShadowCsvLine(const BlockedSignalShadowEvent &event)
    BlockedCsvAppend(line, first, event.direction);
    BlockedCsvAppend(line, first, IntegerToString(event.setupGeneration));
    BlockedCsvAppend(line, first, event.activeGroupId);
+   BlockedCsvAppend(line, first, IntegerToString(event.activeBasePositionIdentifier));
    BlockedCsvAppend(line, first, BlockedCsvBool(event.shadowBuildValid));
    BlockedCsvAppend(line, first, event.shadowBuildReason);
    BlockedCsvAppend(line, first, event.longReject);
@@ -3302,6 +3354,7 @@ string BuildBlockedSignalShadowCsvLine(const BlockedSignalShadowEvent &event)
    BlockedCsvAppend(line, first, IntegerToString(event.activeBarsOpen));
    BlockedCsvAppend(line, first, BlockedShadowValue(event.activeLockedProfitR));
    BlockedCsvAppend(line, first, BlockedShadowValue(event.activeGroupVolume));
+   BlockedCsvAppend(line, first, IntegerToString(event.activePositionCount));
    BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValueAtEventR));
    BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue6BarR));
    BlockedCsvAppend(line, first, BlockedShadowValue(event.activeValue12BarR));
@@ -3546,6 +3599,9 @@ void UpdateBlockedSignalShadowEventsOnClosedBar()
       if(event.completed || !event.shadowBuildValid)
          continue;
 
+      // Bổ sung các leg hedging phát sinh sau event trước khi tính group value.
+      ExtendBlockedEventWithCurrentHedgingLegs(event);
+
       event.ageBars++;
       UpdateBlockedPricePath(event.side == "LONG", event.shadowEntryPrice, event.shadowRiskDistance,
                              rates[0], event.shadowPlus1RHit, event.shadowMinus1RHit,
@@ -3710,8 +3766,8 @@ void AuditBlockedSignalShadowOnClosedBar()
    bool freshShort = shortValid && !blockedShadowState.lastShortSignal;
    if(!hasManagedPosition)
    {
-      // V26 evaluates Long before Short.  A simultaneous pair is represented
-      // by one conflict row whose shadow leg is the blocked Short.
+      // V26 xét Long trước Short. Một cặp đồng thời dùng một row conflict,
+      // trong đó nhánh shadow là Short bị chặn.
       if(longValid && shortValid && (freshLong || freshShort))
       {
          AddBlockedSignalShadowEvent(false, "SIMULTANEOUS_CONFLICT",
@@ -3752,8 +3808,7 @@ void AuditBlockedSignalShadowOnClosedBar()
       }
    }
 
-   // Only the shadow domain is updated here.  The real armedLongBars and
-   // armedShortBars variables are intentionally never read or written.
+   // Chỉ cập nhật miền shadow; armedLongBars/armedShortBars thật không bị đọc/ghi.
    blockedShadowState.lastLongSignal = longValid;
    blockedShadowState.lastShortSignal = shortValid;
 }

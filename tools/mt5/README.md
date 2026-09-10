@@ -72,3 +72,8 @@ một signal chỉ được ghi khi chuyển từ không hợp lệ sang hợp l
 setup generation. Opportunity difference dùng shadow R và continuation R
 tăng thêm của active group sau thời điểm event; đây là telemetry nghiên cứu,
 không phải execution gate.
+
+Khi so sánh control/audit, cổng equality cần được chạy kèm
+`--control-journal`, `--audit-journal` và `--require-diagnostics`. Ngoài summary
+và closed cycle, tool còn đối chiếu chuỗi deal ổn định theo thời gian, side,
+volume, price, P/L, chi phí, reason và comment; thiếu evidence sẽ làm cổng fail.

@@ -34,14 +34,80 @@ REQUIRED_FIELDS = {
     "actual_selected_side",
     "blocked_side",
     "direction",
+    "setup_generation",
+    "active_group_id",
+    "active_base_position_identifier",
     "shadow_build_valid",
+    "shadow_build_reason",
+    "long_reject",
+    "short_reject",
+    "shadow_entry_price",
+    "shadow_spread",
+    "shadow_initial_sl",
+    "actual_selected_build_valid",
     "shadow_risk_distance",
+    "shadow_entry_rsi",
+    "shadow_entry_rsi_ema",
+    "shadow_entry_rsi_wma",
+    "d1_bias",
+    "h4_bias",
+    "h1_bias",
+    "d1_regime_score",
+    "h4_regime_score",
+    "composite_regime_score",
+    "entry_atr_pct",
+    "entry_atr_rank",
+    "entry_efficiency_20",
+    "entry_spread_r",
+    "initial_sl_atr",
+    "active_entry_price",
+    "active_current_price",
+    "active_initial_risk",
+    "active_initial_risk_distance",
+    "active_current_r",
+    "active_sl",
+    "active_is_be",
+    "active_tp1_done",
+    "active_tp2_done",
+    "active_runner_active",
+    "active_pyramid_adds",
+    "active_bars_open",
+    "active_locked_profit_r",
+    "active_group_volume",
+    "active_position_count",
+    "active_value_at_event_r",
+    *(f"active_value_{bars}bar_r" for bars in HORIZONS),
     "shadow_first_hit",
     "shadow_mfe_r",
     "shadow_mae_r",
+    *(f"shadow_return_{bars}bar_r" for bars in HORIZONS),
+    *(f"active_continuation_{bars}bar_r" for bars in HORIZONS),
+    *(f"opportunity_diff_{bars}bar_r" for bars in HORIZONS),
+    *(f"actual_selected_return_{bars}bar_r" for bars in HORIZONS),
+    "active_plus_1r_hit",
+    "active_minus_1r_hit",
+    "active_first_hit",
+    "shadow_plus_1r_hit",
+    "shadow_minus_1r_hit",
+    "shadow_plus_1r_first",
+    "shadow_minus_1r_first",
+    "actual_selected_entry_price",
+    "actual_selected_initial_sl",
+    "actual_selected_risk_distance",
+    "actual_selected_plus_1r_hit",
+    "actual_selected_minus_1r_hit",
+    "actual_selected_plus_1r_first",
+    "actual_selected_minus_1r_first",
+    "actual_selected_first_hit",
+    "actual_selected_mfe_r",
+    "actual_selected_mae_r",
+    "age_bars",
     "completed",
+    "incomplete_reason",
 }
 NUMERIC_FIELDS = (
+    "setup_generation",
+    "active_base_position_identifier",
     "shadow_entry_price",
     "shadow_spread",
     "shadow_initial_sl",
@@ -49,9 +115,12 @@ NUMERIC_FIELDS = (
     "shadow_entry_rsi",
     "shadow_entry_rsi_ema",
     "shadow_entry_rsi_wma",
+    "d1_regime_score",
+    "h4_regime_score",
+    "composite_regime_score",
     "entry_atr_pct",
     "entry_atr_rank",
-    "entry_efficiency20",
+    "entry_efficiency_20",
     "entry_spread_r",
     "initial_sl_atr",
     "active_entry_price",
@@ -64,15 +133,10 @@ NUMERIC_FIELDS = (
     "active_bars_open",
     "active_locked_profit_r",
     "active_group_volume",
+    "active_position_count",
     "active_value_at_event_r",
-    "active_value6bar_r",
-    "active_value12bar_r",
-    "active_value24bar_r",
-    "active_value48bar_r",
-    "active_continuation6bar_r",
-    "active_continuation12bar_r",
-    "active_continuation24bar_r",
-    "active_continuation48bar_r",
+    *(f"active_value_{bars}bar_r" for bars in HORIZONS),
+    *(f"active_continuation_{bars}bar_r" for bars in HORIZONS),
     "shadow_mfe_r",
     "shadow_mae_r",
     *(f"shadow_return_{bars}bar_r" for bars in HORIZONS),
@@ -94,10 +158,66 @@ EVENT_TYPES = {
     "SHORT_ONLY",
 }
 ACTIVE_EVENT_TYPES = {"BLOCKED_OPPOSITE", "BLOCKED_SAME_SIDE"}
+BOOLEAN_FIELDS = (
+    "shadow_build_valid",
+    "actual_selected_build_valid",
+    "active_is_be",
+    "active_tp1_done",
+    "active_tp2_done",
+    "active_runner_active",
+    "active_plus_1r_hit",
+    "active_minus_1r_hit",
+    "shadow_plus_1r_hit",
+    "shadow_minus_1r_hit",
+    "shadow_plus_1r_first",
+    "shadow_minus_1r_first",
+    "actual_selected_plus_1r_hit",
+    "actual_selected_minus_1r_hit",
+    "actual_selected_plus_1r_first",
+    "actual_selected_minus_1r_first",
+    "completed",
+)
+BOOLEAN_TOKENS = {"true", "false", "1", "0", "yes", "no"}
+COMMON_COMPLETED_NUMERIC_FIELDS = (
+    "shadow_risk_distance",
+    "shadow_mfe_r",
+    "shadow_mae_r",
+    *(f"shadow_return_{bars}bar_r" for bars in HORIZONS),
+)
+ACTIVE_COMPLETED_NUMERIC_FIELDS = (
+    "active_entry_price",
+    "active_current_price",
+    "active_initial_risk",
+    "active_initial_risk_distance",
+    "active_current_r",
+    "active_sl",
+    "active_pyramid_adds",
+    "active_bars_open",
+    "active_locked_profit_r",
+    "active_group_volume",
+    "active_position_count",
+    "active_value_at_event_r",
+    *(f"active_value_{bars}bar_r" for bars in HORIZONS),
+    *(f"active_continuation_{bars}bar_r" for bars in HORIZONS),
+    *(f"opportunity_diff_{bars}bar_r" for bars in HORIZONS),
+)
+CONFLICT_COMPLETED_NUMERIC_FIELDS = (
+    "actual_selected_entry_price",
+    "actual_selected_initial_sl",
+    "actual_selected_risk_distance",
+    "actual_selected_mfe_r",
+    "actual_selected_mae_r",
+    *(f"actual_selected_return_{bars}bar_r" for bars in HORIZONS),
+)
 
 
 def as_bool(value: object) -> bool:
     return str(value or "").strip().lower() in {"true", "1", "yes"}
+
+
+def is_boolean_token(value: object) -> bool:
+    """Kiểm tra boolean CSV thay vì âm thầm coi giá trị lạ là false."""
+    return str(value or "").strip().lower() in BOOLEAN_TOKENS
 
 
 def as_float(value: object) -> float | None:
@@ -239,6 +359,7 @@ def _empty_quality() -> dict[str, object]:
     return {
         "rows": 0,
         "schema_missing_fields": [],
+        "missing_event_id_rows": 0,
         "duplicate_event_ids": 0,
         "duplicate_event_id_values": [],
         "nan_or_inf_values": 0,
@@ -247,14 +368,18 @@ def _empty_quality() -> dict[str, object]:
         "invalid_numeric_by_field": {},
         "invalid_side_rows": 0,
         "invalid_event_type_rows": 0,
+        "invalid_event_relation_rows": 0,
+        "invalid_boolean_values": 0,
         "invalid_time_rows": 0,
         "negative_risk_distance_rows": 0,
         "zero_or_missing_risk_rows": 0,
         "negative_age_rows": 0,
         "completed_before_horizon_rows": 0,
         "horizon_lookahead_rows": 0,
-        # CSV cannot observe writes to MQL globals; this zero is paired with
-        # the source-level isolation contract and OFF/ON execution regression.
+        "missing_completed_outcome_rows": 0,
+        "missing_completed_outcome_by_field": {},
+        # CSV không quan sát được việc ghi MQL global; giá trị 0 này đi kèm
+        # hợp đồng cô lập ở source và regression execution OFF/ON.
         "state_mutation_violations": 0,
         "valid_completed_events": 0,
         "incomplete_valid_events": 0,
@@ -279,6 +404,7 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
     valid_complete: list[dict[str, object]] = []
     incomplete_valid = 0
     invalid_build = 0
+    missing_completed_outcome_by_field: Counter[str] = Counter()
 
     for row_number, original in enumerate(rows, start=2):
         row = dict(original)
@@ -288,6 +414,13 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
         row["__direction"] = canonical_direction(row)
         row["__event_type"] = str(row.get("event_type") or "").strip().upper()
         row["__side"] = str(row.get("side") or "").strip().upper()
+
+        if not str(row.get("event_id") or "").strip():
+            quality["missing_event_id_rows"] += 1
+
+        for field in BOOLEAN_FIELDS:
+            if not is_boolean_token(row.get(field)):
+                quality["invalid_boolean_values"] += 1
 
         for field in NUMERIC_FIELDS:
             if field not in row:
@@ -314,6 +447,36 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
             quality["invalid_side_rows"] += 1
         if event_type not in EVENT_TYPES:
             quality["invalid_event_type_rows"] += 1
+        relation_valid = True
+        if event_type in ACTIVE_EVENT_TYPES:
+            relation_valid = (
+                active_side in {"LONG", "SHORT"}
+                and shadow_side == side
+                and selected_side == "NONE"
+                and str(row.get("blocked_side") or "").strip().upper() == shadow_side
+                and (
+                    (event_type == "BLOCKED_OPPOSITE" and active_side != shadow_side)
+                    or (event_type == "BLOCKED_SAME_SIDE" and active_side == shadow_side)
+                )
+            )
+        elif event_type == "SIMULTANEOUS_CONFLICT":
+            relation_valid = (
+                active_side == "NONE"
+                and shadow_side == side
+                and selected_side == "LONG"
+                and str(row.get("blocked_side") or "").strip().upper() == shadow_side
+            )
+        elif event_type in {"LONG_ONLY", "SHORT_ONLY"}:
+            expected_side = "LONG" if event_type == "LONG_ONLY" else "SHORT"
+            relation_valid = (
+                active_side == "NONE"
+                and side == expected_side
+                and shadow_side == expected_side
+                and selected_side == expected_side
+                and str(row.get("blocked_side") or "").strip().upper() == "NONE"
+            )
+        if event_type in EVENT_TYPES and not relation_valid:
+            quality["invalid_event_relation_rows"] += 1
         if parse_time(row.get("event_time")) is None or parse_time(row.get("entry_bar_time")) is None:
             quality["invalid_time_rows"] += 1
 
@@ -336,15 +499,37 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
         if event_time is not None and entry_time is not None and entry_time > event_time:
             quality["horizon_lookahead_rows"] += 1
 
+        horizon_field_prefixes = (
+            "shadow_return",
+            "active_continuation",
+            "opportunity_diff",
+            "actual_selected_return",
+        )
         for bars in HORIZONS:
-            field = f"shadow_return_{bars}bar_r"
-            if row.get(f"__number_{field}") is not None and age is not None and age < bars:
-                quality["horizon_lookahead_rows"] += 1
+            for prefix in horizon_field_prefixes:
+                field = f"{prefix}_{bars}bar_r"
+                if row.get(f"__number_{field}") is not None and age is not None and age < bars:
+                    quality["horizon_lookahead_rows"] += 1
 
         if not as_bool(row.get("shadow_build_valid")):
             invalid_build += 1
             continue
         if as_bool(row.get("completed")):
+            required_outcomes = list(COMMON_COMPLETED_NUMERIC_FIELDS)
+            if event_type in ACTIVE_EVENT_TYPES:
+                required_outcomes.extend(ACTIVE_COMPLETED_NUMERIC_FIELDS)
+            if event_type == "SIMULTANEOUS_CONFLICT":
+                if not as_bool(row.get("actual_selected_build_valid")):
+                    quality["missing_completed_outcome_rows"] += 1
+                    missing_completed_outcome_by_field["actual_selected_build_valid"] += 1
+                    continue
+                required_outcomes.extend(CONFLICT_COMPLETED_NUMERIC_FIELDS)
+            missing_outcomes = [field for field in required_outcomes if as_float(row.get(field)) is None]
+            if missing_outcomes:
+                quality["missing_completed_outcome_rows"] += 1
+                for field in missing_outcomes:
+                    missing_completed_outcome_by_field[field] += 1
+                continue
             valid_complete.append(row)
         else:
             incomplete_valid += 1
@@ -353,6 +538,7 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
     quality["nan_or_inf_by_field"] = dict(sorted(nonfinite_by_field.items()))
     quality["invalid_numeric_values"] = sum(invalid_numeric_by_field.values())
     quality["invalid_numeric_by_field"] = dict(sorted(invalid_numeric_by_field.items()))
+    quality["missing_completed_outcome_by_field"] = dict(sorted(missing_completed_outcome_by_field.items()))
     quality["valid_completed_events"] = len(valid_complete)
     quality["incomplete_valid_events"] = incomplete_valid
     quality["invalid_build_events"] = invalid_build
@@ -360,17 +546,21 @@ def _validate_rows(rows: Sequence[Mapping[str, object]], fieldnames: Sequence[st
         quality[key]
         for key in (
             "schema_missing_fields",
+            "missing_event_id_rows",
             "duplicate_event_ids",
             "nan_or_inf_values",
             "invalid_numeric_values",
             "invalid_side_rows",
             "invalid_event_type_rows",
+            "invalid_event_relation_rows",
+            "invalid_boolean_values",
             "invalid_time_rows",
             "negative_risk_distance_rows",
             "zero_or_missing_risk_rows",
             "negative_age_rows",
             "completed_before_horizon_rows",
             "horizon_lookahead_rows",
+            "missing_completed_outcome_rows",
             "state_mutation_violations",
         )
     )
