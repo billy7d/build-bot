@@ -21,3 +21,8 @@ observation của một canonical id.
 
 `V26`/`V63` là execution strategy; `V81`/`V82` là audit layer. Data foundation
 không gửi lệnh, không thay EA/risk/gate và không tạo synthetic V82 events.
+
+Manifest provenance giữ `repository_base_sha`, `dataset_generation_commit`,
+`report_capture_commit` và `dataset_fingerprint` với semantics độc lập với PR.
+The current PR head is intentionally not embedded in `dataset_manifest.json`
+because it is mutable PR metadata rather than dataset provenance.

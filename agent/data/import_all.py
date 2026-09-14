@@ -37,6 +37,33 @@ def _git_commit(root: Path) -> str | None:
     return current_git_commit(root)
 
 
+def _load_existing_manifest(path: Path) -> dict[str, object]:
+    """Đọc manifest cũ để giữ nguyên commit đã tạo dataset."""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _resolve_dataset_generation_commit(
+    existing_manifest: dict[str, object],
+    current_fingerprint: object,
+    fallback_commit: str | None,
+) -> str | None:
+    """Chỉ giữ commit generation cũ khi fingerprint dataset không đổi."""
+
+    generation_commit = existing_manifest.get("dataset_generation_commit")
+    if (
+        isinstance(generation_commit, str)
+        and generation_commit
+        and existing_manifest.get("dataset_fingerprint") == current_fingerprint
+    ):
+        return generation_commit
+    return fallback_commit
+
+
 def _ea_hash(root: Path) -> str | None:
     path = root / "outputs" / "Mentor_RSI_MTF_v1.mq5"
     return sha256_file(path) if path.exists() else None
@@ -304,6 +331,8 @@ def import_all(
     parquet_dir: Path,
 ) -> dict[str, object]:
     root = root.resolve()
+    existing_manifest = _load_existing_manifest(manifest_path)
+    report_capture_commit = _git_commit(root)
     inventory = build_inventory(root)
     write_inventory(root, inventory_path)
     connection = connect_database(db_path)
@@ -320,7 +349,19 @@ def import_all(
     quality = run_quality(connection, inventory)
     quality_path.parent.mkdir(parents=True, exist_ok=True)
     quality_path.write_text(json.dumps(quality, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    manifest = build_manifest(connection, root=root, inventory=inventory, quality=quality)
+    dataset_generation_commit = _resolve_dataset_generation_commit(
+        existing_manifest,
+        quality.get("fingerprint"),
+        report_capture_commit,
+    )
+    manifest = build_manifest(
+        connection,
+        root=root,
+        inventory=inventory,
+        quality=quality,
+        dataset_generation_commit=dataset_generation_commit,
+        report_capture_commit=report_capture_commit,
+    )
     write_manifest(manifest, manifest_path)
     write_reports(connection, output_dir=manifest_path.parent, inventory=inventory, quality=quality, manifest=manifest)
     fatal_quality_failure = _has_fatal_quality_failure(quality)

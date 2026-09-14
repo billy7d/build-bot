@@ -122,7 +122,7 @@ def render_foundation_report(
 - Dataset: `{manifest.get('dataset_version')}`
 - Repository base SHA: `{manifest.get('repository_base_sha') or 'UNKNOWN'}`
 - Dataset generation/implementation commit: `{manifest.get('dataset_generation_commit') or 'UNKNOWN'}`
-- PR head captured at generation: `{manifest.get('pr_head') or 'UNKNOWN'}`
+- Report capture commit: `{manifest.get('report_capture_commit') or 'UNKNOWN'}`
 - Dataset fingerprint: `{dataset_fingerprint(connection)}`
 - Quality: **{quality.get('status')}** ({dict(sorted(quality_checks.items()))})
 - SQLite migrations: `{', '.join(migration_versions(connection))}`

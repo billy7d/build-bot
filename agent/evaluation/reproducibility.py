@@ -89,6 +89,8 @@ def build_manifest(
     root: Path,
     inventory: dict[str, Any] | None = None,
     quality: dict[str, Any] | None = None,
+    dataset_generation_commit: str | None,
+    report_capture_commit: str | None,
 ) -> dict[str, object]:
     strategy_versions = [row[0] for row in connection.execute("SELECT id FROM strategy_versions ORDER BY id")]
     audit_versions = [row[0] for row in connection.execute("SELECT id FROM audit_versions ORDER BY id")]
@@ -112,12 +114,11 @@ def build_manifest(
         "SELECT COUNT(*) FROM trading_episodes WHERE audit_version = 'V82'"
     ).fetchone()[0])
     overlap = (quality or {}).get("overlap", {})
-    generation_commit = current_git_commit(root)
     return {
         "dataset_version": DATASET_VERSION,
         "repository_base_sha": repository_base_sha(root),
-        "dataset_generation_commit": generation_commit,
-        "pr_head": generation_commit,
+        "dataset_generation_commit": dataset_generation_commit,
+        "report_capture_commit": report_capture_commit,
         "dataset_fingerprint": dataset_fingerprint(connection),
         "schema_versions": migration_versions(connection),
         "parser_versions": fingerprint_inputs(connection)["parser_versions"],

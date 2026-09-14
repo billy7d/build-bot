@@ -38,11 +38,11 @@
       "parser_version": "v82-parser/1"
     }
   ],
-  "pr_head": "a834b18510d2b752f840bedd7a6e204c329ecb5d",
   "presets": 79,
   "quality_status": "PASS",
   "raw_v82_observations": 3618,
   "raw_v82_status": "AVAILABLE",
+  "report_capture_commit": "cb150c60807ae3b705bb62ae066f818352b095dd",
   "repository_base_sha": "d8aa252ba9a5de89b9fb75c8bc1016750d3f2862",
   "schema_versions": [
     "001",
