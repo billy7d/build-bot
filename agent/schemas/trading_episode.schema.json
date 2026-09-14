@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/trading-episode.schema.json",
+  "title": "Trading Episode",
+  "type": "object",
+  "required": ["episode_id", "source_artifact_id", "symbol", "timeframe", "timestamp_utc", "side", "episode_kind", "candidate_type", "candidate_exists", "was_executed", "fold_type"],
+  "properties": {
+    "episode_id": {"type": "string", "minLength": 1},
+    "source_artifact_id": {"type": "integer", "minimum": 1},
+    "strategy_version": {"type": ["string", "null"]},
+    "audit_version": {"type": ["string", "null"]},
+    "symbol": {"type": "string"},
+    "timeframe": {"enum": ["M1", "M5", "M15", "M30", "H1", "H4", "D1"]},
+    "timestamp_utc": {"type": "string", "pattern": "Z$"},
+    "side": {"enum": ["LONG", "SHORT"]},
+    "episode_kind": {"enum": ["EXECUTION_CANDIDATE", "EXECUTED_TRADE", "FLAT_CANDIDATE", "BLOCKED_OPPORTUNITY", "CONTROL_OPPORTUNITY", "SIMULTANEOUS_CONFLICT", "PYRAMID_OPPORTUNITY", "UNKNOWN"]},
+    "candidate_type": {"enum": ["BASE", "PYRAMID", "FLAT", "BLOCKED", "CONTROL", "UNKNOWN"]},
+    "candidate_exists": {"enum": [0, 1]},
+    "was_executed": {"enum": [0, 1]},
+    "fold_type": {"enum": ["TRAIN", "VALIDATION", "OOS", "FORWARD", "SMOKE", "UNKNOWN"]}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,51 @@
+{
+  "audits": [
+    "V81",
+    "V82"
+  ],
+  "blocked_opportunities": 2823,
+  "dataset_fingerprint": "02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f",
+  "dataset_version": "TA-DATA-V1",
+  "episodes": 7236,
+  "executions": 0,
+  "experiments": 8,
+  "features": 7236,
+  "git_commit": "d8aa252ba9a5de89b9fb75c8bc1016750d3f2862",
+  "normalization_version": "normalization/1",
+  "opportunity_context": 3618,
+  "opportunity_outcomes": 3618,
+  "outcomes": 7236,
+  "parser_versions": [
+    {
+      "parser_name": "metadata",
+      "parser_version": "metadata-parser/1"
+    },
+    {
+      "parser_name": "preset",
+      "parser_version": "preset-parser/1"
+    },
+    {
+      "parser_name": "v81_stddev",
+      "parser_version": "v81-parser/1"
+    },
+    {
+      "parser_name": "v82_blocked_signal",
+      "parser_version": "v82-parser/1"
+    }
+  ],
+  "presets": 79,
+  "quality_status": "PASS",
+  "raw_v82_status": "AVAILABLE",
+  "schema_versions": [
+    "001",
+    "002",
+    "003",
+    "004",
+    "005"
+  ],
+  "sources": 126,
+  "strategies": [
+    "V26",
+    "V63"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/source-artifact.schema.json",
+  "title": "Trading Memory source artifact",
+  "type": "object",
+  "required": ["path", "artifact_type", "size", "sha256", "status"],
+  "properties": {
+    "path": {"type": "string", "minLength": 1},
+    "artifact_type": {"enum": ["BACKTEST_SUMMARY", "TRADE_HISTORY", "TELEMETRY", "STDDEV_SHADOW_TELEMETRY", "BLOCKED_SIGNAL_SHADOW_TELEMETRY", "PRESET", "AUDIT_PRESET", "MT5_REPORT", "JOURNAL", "FORWARD_REPORT", "EXPERIMENT_REPORT", "OPPORTUNITY_AUDIT_REPORT", "UNKNOWN"]},
+    "size": {"type": "integer", "minimum": 0},
+    "sha256": {"type": ["string", "null"]},
+    "strategy_version": {"type": ["string", "null"]},
+    "audit_version": {"type": ["string", "null"]},
+    "status": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/opportunity-context.schema.json",
+  "title": "V82 opportunity context",
+  "type": "object",
+  "required": ["episode_id", "event_type", "active_side", "shadow_side", "actual_selected_side", "blocked_side", "direction"],
+  "properties": {
+    "episode_id": {"type": "string"},
+    "event_type": {"enum": ["BLOCKED_OPPOSITE", "BLOCKED_SAME_SIDE", "LONG_ONLY", "SHORT_ONLY", "SIMULTANEOUS_CONFLICT"]},
+    "active_side": {"enum": ["LONG", "SHORT", "NONE"]},
+    "shadow_side": {"enum": ["LONG", "SHORT"]},
+    "actual_selected_side": {"enum": ["LONG", "SHORT", "NONE"]},
+    "blocked_side": {"enum": ["LONG", "SHORT", "NONE"]},
+    "direction": {"type": "string"},
+    "setup_generation": {"type": ["integer", "null"]},
+    "active_group_id": {"type": ["string", "null"]},
+    "active_base_position_identifier": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

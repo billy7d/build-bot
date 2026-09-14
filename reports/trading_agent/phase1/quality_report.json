@@ -1,0 +1,215 @@
+{
+  "checks": [
+    {
+      "count": 0,
+      "name": "required_schema",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "failed_source_artifacts",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "duplicate_source_hash_parser",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "duplicate_episode",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "missing_episode_timestamps",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "invalid_timezone",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 16,
+      "name": "inferred_timezone_provenance",
+      "passed": false,
+      "severity": "WARN"
+    },
+    {
+      "count": 0,
+      "name": "invalid_numeric",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "negative_stddev",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "rank_or_abs_z_out_of_range",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "orphan_foreign_keys",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "detail": "ok",
+      "name": "sqlite_integrity",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "orphan_execution",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "orphan_outcome",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "invalid_strategy_relationship",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "invalid_audit_relationship",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "invalid_registry_relationship",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "invalid_v82_direction",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "opportunity_diff_consistency",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "invalid_first_hit",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "opportunity_outcome_without_context",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "missing_completed_outcomes",
+      "passed": true,
+      "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "lookahead_violations",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 27,
+      "name": "unknown_source_artifacts",
+      "passed": false,
+      "severity": "WARN"
+    },
+    {
+      "count": 1,
+      "name": "duplicate_source_paths",
+      "passed": false,
+      "severity": "WARN"
+    },
+    {
+      "count": 0,
+      "name": "raw_v82_missing",
+      "passed": true,
+      "severity": "WARN"
+    }
+  ],
+  "completeness": {
+    "ATR_percent": 100.0,
+    "Active_context_percent": 39.0133,
+    "Opportunity_outcome_percent": 49.7236,
+    "RSI_percent": 100.0,
+    "Regime_percent": 100.0,
+    "Spread_percent": 100.0,
+    "StdDev_percent": 50.0,
+    "V82_shadow_outcome_percent": 49.7236,
+    "Z-score_percent": 50.0,
+    "episodes": 7236
+  },
+  "fingerprint": "02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f",
+  "leakage": {
+    "checked_feature_rows": 7236,
+    "checked_outcome_rows": 10794,
+    "feature_columns": [
+      "episode_id",
+      "rsi",
+      "atr14",
+      "atr_percent",
+      "return_1",
+      "return_3",
+      "return_6",
+      "return_std_20",
+      "return_std_rank",
+      "price_std_20",
+      "price_std_100",
+      "price_std_pct_20",
+      "std_ratio_20_100",
+      "price_z20",
+      "price_abs_z20",
+      "rsi_std_20",
+      "rsi_std_rank",
+      "atr_return_std_ratio",
+      "atr_return_std_rank",
+      "feature_schema_version",
+      "feature_provenance",
+      "feature_timestamp_utc",
+      "raw_features_json",
+      "spread_r"
+    ],
+    "forbidden_columns": [],
+    "lookahead_violations": 0,
+    "passed": true,
+    "violations": []
+  },
+  "severity_order": {
+    "ERROR": 2,
+    "FATAL": 3,
+    "INFO": 0,
+    "WARN": 1
+  },
+  "status": "PASS"
+}

@@ -1,0 +1,2 @@
+event_id,event_time,entry_bar_time,fold,side,event_type,active_side,shadow_side,actual_selected_side,blocked_side,direction,setup_generation,active_group_id,active_base_position_identifier,shadow_build_valid,shadow_entry_price,shadow_initial_sl,shadow_risk_distance,shadow_return_48bar_r,entry_spread_r,completed,incomplete_reason
+1735689600_G_1_SHORT_BLOCKED_OPPOSITE,2025.01.01 00:00,2025.01.01 00:00,oos_2025_plus,SHORT,BLOCKED_OPPOSITE,LONG,SHORT,NONE,SHORT,LONG_active_to_SHORT_blocked,1,G_1,2,true,100,102,2,0.5,0.3,true,
