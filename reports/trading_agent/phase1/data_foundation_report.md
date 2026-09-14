@@ -3,7 +3,7 @@
 ## Status
 
 - Dataset: `TA-DATA-V1`
-- Base SHA: `d8aa252ba9a5de89b9fb75c8bc1016750d3f2862`
+- Base SHA: `58b9ae637dbb4ee451782671d9be0f07bfbe7eeb`
 - Dataset fingerprint: `02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f`
 - Quality: **PASS** ({'WARN': 3})
 - SQLite migrations: `001, 002, 003, 004, 005`

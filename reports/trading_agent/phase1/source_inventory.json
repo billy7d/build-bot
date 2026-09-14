@@ -2786,7 +2786,7 @@
       "timezone_confidence": "UNKNOWN"
     }
   ],
-  "generated_at": "2026-09-14T07:24:02Z",
+  "generated_at": "2026-09-14T07:25:48Z",
   "known_exclusions": [
     "outputs/build/MT5 runtime directories, .git snapshots and .ex5 binaries are not research source artifacts",
     "reports/trading_agent/phase1 is generated output and is not re-imported as raw input"
