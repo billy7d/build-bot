@@ -1,0 +1,12 @@
+CREATE INDEX IF NOT EXISTS idx_episode_timestamp ON trading_episodes(timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_episode_strategy ON trading_episodes(strategy_version);
+CREATE INDEX IF NOT EXISTS idx_episode_audit ON trading_episodes(audit_version);
+CREATE INDEX IF NOT EXISTS idx_episode_symbol ON trading_episodes(symbol);
+CREATE INDEX IF NOT EXISTS idx_episode_timeframe ON trading_episodes(timeframe);
+CREATE INDEX IF NOT EXISTS idx_episode_experiment ON trading_episodes(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_episode_preset ON trading_episodes(preset_id);
+CREATE INDEX IF NOT EXISTS idx_episode_kind ON trading_episodes(episode_kind);
+CREATE INDEX IF NOT EXISTS idx_episode_executed ON trading_episodes(was_executed);
+CREATE INDEX IF NOT EXISTS idx_execution_episode ON executions(episode_id);
+CREATE INDEX IF NOT EXISTS idx_outcome_episode ON episode_outcomes(episode_id);
+CREATE INDEX IF NOT EXISTS idx_source_hash ON source_artifacts(sha256);

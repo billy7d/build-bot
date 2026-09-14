@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/experiment.schema.json",
+  "title": "Trading experiment",
+  "type": "object",
+  "required": ["id", "name", "fold_type"],
+  "properties": {
+    "id": {"type": "string"},
+    "name": {"type": "string"},
+    "strategy_version": {"type": ["string", "null"]},
+    "audit_version": {"type": ["string", "null"]},
+    "preset_id": {"type": ["string", "null"]},
+    "symbol": {"type": ["string", "null"]},
+    "timeframe": {"type": ["string", "null"]},
+    "start_time": {"type": ["string", "null"]},
+    "end_time": {"type": ["string", "null"]},
+    "deposit": {"type": ["number", "null"]},
+    "leverage": {"type": ["string", "null"]},
+    "history_quality": {"type": ["string", "null"]},
+    "tick_model": {"type": ["string", "null"]},
+    "purpose": {"type": ["string", "null"]},
+    "fold_type": {"enum": ["TRAIN", "VALIDATION", "OOS", "FORWARD", "SMOKE", "UNKNOWN"]}
+  },
+  "additionalProperties": false
+}

@@ -5,4 +5,11 @@ __pycache__/
 outputs/build/
 outputs/*.ex5
 backtests/
+data/raw/
+data/normalized/
+data/parquet/
+data/cache/
+data/*.db
+data/*.sqlite
+*.parquet
 

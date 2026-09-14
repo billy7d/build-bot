@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/audit-version.schema.json",
+  "title": "Observation/audit version",
+  "type": "object",
+  "required": ["id", "name", "audit_type", "base_strategy_version", "mode", "execution_authority", "status"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^V[0-9]+$"},
+    "name": {"type": "string"},
+    "audit_type": {"type": "string"},
+    "base_strategy_version": {"type": ["string", "null"]},
+    "parent_audit_version": {"type": ["string", "null"]},
+    "git_commit": {"type": ["string", "null"]},
+    "source_hash": {"type": ["string", "null"]},
+    "mode": {"type": "string"},
+    "execution_authority": {"const": "NONE"},
+    "description": {"type": "string"},
+    "status": {"type": "string"}
+  },
+  "additionalProperties": false
+}

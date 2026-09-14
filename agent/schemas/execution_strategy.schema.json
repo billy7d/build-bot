@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://build-bot.local/schemas/execution-strategy.schema.json",
+  "title": "Execution strategy version",
+  "type": "object",
+  "required": ["id", "name", "description", "status"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^V[0-9]+$"},
+    "name": {"type": "string"},
+    "parent_strategy_version": {"type": ["string", "null"]},
+    "git_commit": {"type": ["string", "null"]},
+    "source_hash": {"type": ["string", "null"]},
+    "description": {"type": "string"},
+    "status": {"type": "string"}
+  },
+  "additionalProperties": false
+}
