@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from agent.evaluation.leakage_checks import synthetic_future_mutation_test
 from agent.memory.database import apply_migrations, connect_database
 from agent.memory.parquet import TABLE_FILES, export_tables
+from agent.data.queries import run_named_query
 
 
 class EvaluationTests(unittest.TestCase):
@@ -27,6 +28,10 @@ class EvaluationTests(unittest.TestCase):
                 footer_size = int.from_bytes(payload[-8:-4], "little")
                 self.assertGreater(footer_size, 0)
                 self.assertLessEqual(footer_size + 8, len(payload))
+                if filename == "episodes.parquet":
+                    self.assertIn(b"canonical_opportunity_id", payload)
+            self.assertEqual(run_named_query(connection, "O")[0]["unique_canonical_opportunities"], 0)
+            self.assertEqual(run_named_query(connection, "P"), [])
             connection.close()
 
 

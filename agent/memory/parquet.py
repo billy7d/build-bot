@@ -261,6 +261,8 @@ def _sqlite_type(sql_type: str) -> tuple[int, bool]:
 def _export_minimal(connection: sqlite3.Connection, table: str, output: Path) -> None:
     columns_info = connection.execute(f"PRAGMA table_info({table})").fetchall()
     names = [row[1] for row in columns_info]
+    if table == "trading_episodes" and "canonical_opportunity_id" not in names:
+        raise RuntimeError("episodes export thiếu canonical_opportunity_id; từ chối tạo Phase 2 dataset")
     types = [_sqlite_type(row[2]) for row in columns_info]
     order_by = names[0] if names else "rowid"
     rows = connection.execute(f"SELECT * FROM {table} ORDER BY {order_by}").fetchall()
@@ -288,6 +290,8 @@ def _export_arrow(connection: sqlite3.Connection, table: str, output: Path) -> b
         return False
     columns_info = connection.execute(f"PRAGMA table_info({table})").fetchall()
     names = [row[1] for row in columns_info]
+    if table == "trading_episodes" and "canonical_opportunity_id" not in names:
+        raise RuntimeError("episodes export thiếu canonical_opportunity_id; từ chối tạo Phase 2 dataset")
     rows = connection.execute(f"SELECT * FROM {table} ORDER BY {names[0] if names else 'rowid'}").fetchall()
     payload = {name: [row[index] for row in rows] for index, name in enumerate(names)}
     output.parent.mkdir(parents=True, exist_ok=True)

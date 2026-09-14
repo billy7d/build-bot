@@ -21,7 +21,7 @@ def validate_episode_record(record: Mapping[str, Any]) -> list[str]:
     for field in (
         "episode_id", "source_artifact_id", "symbol", "timeframe", "timestamp_utc",
         "side", "episode_kind", "candidate_type", "candidate_exists", "was_executed",
-        "fold_type",
+        "fold_type", "canonical_opportunity_id",
     ):
         if record.get(field) in (None, ""):
             errors.append(f"episode thiếu {field}")

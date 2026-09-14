@@ -99,19 +99,48 @@ NAMED_QUERIES = {
         FROM trading_episodes
         GROUP BY fold_type ORDER BY fold_type
     """,
+    "O": """
+        SELECT COUNT(DISTINCT canonical_opportunity_id) AS unique_canonical_opportunities,
+               COUNT(*) AS audit_observations
+        FROM trading_episodes
+    """,
+    "P": """
+        SELECT * FROM trading_episodes
+        WHERE canonical_opportunity_id = (
+            SELECT canonical_opportunity_id
+            FROM trading_episodes
+            WHERE canonical_opportunity_id IS NOT NULL
+            ORDER BY canonical_opportunity_id
+            LIMIT 1
+        )
+        ORDER BY audit_version, timestamp_utc, episode_id
+    """,
 }
 
 
-def run_named_query(connection: sqlite3.Connection, name: str, limit: int | None = None) -> list[dict[str, object]]:
+def run_named_query(
+    connection: sqlite3.Connection,
+    name: str,
+    limit: int | None = None,
+    canonical_opportunity_id: str | None = None,
+) -> list[dict[str, object]]:
     key = name.upper()
     if key not in NAMED_QUERIES:
-        raise ValueError(f"query phải thuộc A-N, nhận {name!r}")
-    sql = NAMED_QUERIES[key]
+        raise ValueError(f"query phải thuộc A-P, nhận {name!r}")
+    params: list[object] = []
+    if key == "P" and canonical_opportunity_id is not None:
+        sql = """
+            SELECT * FROM trading_episodes
+            WHERE canonical_opportunity_id = ?
+            ORDER BY audit_version, timestamp_utc, episode_id
+        """
+        params.append(canonical_opportunity_id)
+    else:
+        sql = NAMED_QUERIES[key]
     if limit is not None:
         sql = f"SELECT * FROM ({sql}) LIMIT ?"
-        rows = connection.execute(sql, (limit,)).fetchall()
-    else:
-        rows = connection.execute(sql).fetchall()
+        params.append(limit)
+    rows = connection.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -120,10 +149,11 @@ def main() -> int:
     parser.add_argument("name", choices=tuple(NAMED_QUERIES))
     parser.add_argument("--db", type=Path, default=Path("data/trading_memory.db"))
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--canonical-id", help="canonical id cho query P; mặc định lấy id đầu tiên")
     args = parser.parse_args()
     connection = connect_database(args.db)
     apply_migrations(connection)
-    result = run_named_query(connection, args.name, args.limit)
+    result = run_named_query(connection, args.name, args.limit, args.canonical_id)
     print(json.dumps({"query": args.name, "rows": len(result), "data": result}, ensure_ascii=False, indent=2, default=str))
     connection.close()
     return 0

@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .leakage_checks import run_leakage_checks
+from .opportunity_overlap import build_overlap_audit
 from .reproducibility import dataset_fingerprint
 from ..memory.database import connect_database, apply_migrations, integrity_status
 
@@ -80,6 +81,14 @@ def run_quality(connection: sqlite3.Connection, inventory: dict[str, Any] | None
     if missing_tables:
         return {"status": "FAIL", "checks": checks, "fingerprint": None}
 
+    episode_columns = [row[1] for row in connection.execute("PRAGMA table_info(trading_episodes)")]
+    missing_linkage_columns = [
+        column for column in ("canonical_opportunity_id",) if column not in episode_columns
+    ]
+    checks.append(_check("canonical_linkage_schema", "FATAL", len(missing_linkage_columns), missing_linkage_columns))
+    if missing_linkage_columns:
+        return {"status": "FAIL", "checks": checks, "fingerprint": dataset_fingerprint(connection)}
+
     failed_sources = int(connection.execute(
         "SELECT COUNT(*) FROM source_artifacts WHERE status = 'FAILED'"
     ).fetchone()[0])
@@ -100,6 +109,10 @@ def run_quality(connection: sqlite3.Connection, inventory: dict[str, Any] | None
         "SELECT COUNT(*) FROM trading_episodes WHERE timestamp_utc IS NULL OR timestamp_utc = ''"
     ).fetchone()[0])
     checks.append(_check("missing_episode_timestamps", "ERROR", missing_timestamps))
+    missing_canonical_ids = int(connection.execute(
+        "SELECT COUNT(*) FROM trading_episodes WHERE canonical_opportunity_id IS NULL OR canonical_opportunity_id = ''"
+    ).fetchone()[0])
+    checks.append(_check("missing_canonical_opportunity_id", "FATAL", missing_canonical_ids))
 
     invalid_timezone = 0
     inferred_timezone = 0
@@ -261,6 +274,18 @@ def run_quality(connection: sqlite3.Connection, inventory: dict[str, Any] | None
     checks.append(_check("missing_completed_outcomes", "ERROR", missing_completed_outcomes))
     leakage = run_leakage_checks(connection)
     checks.append(_check("lookahead_violations", "FATAL", leakage["lookahead_violations"], leakage["violations"]))
+    overlap = build_overlap_audit(connection)
+    checks.append(_check(
+        "unexpected_canonical_collisions",
+        "FATAL",
+        int(overlap.get("unexpected_canonical_collisions", 0)),
+        {"same_audit_duplicate_groups": overlap.get("same_audit_duplicate_canonical_groups", 0)},
+    ))
+    checks.append(_check(
+        "same_audit_canonical_duplicates",
+        "FATAL",
+        int(overlap.get("same_audit_duplicate_canonical_groups", 0)),
+    ))
     checks.extend(_quality_for_inventory(inventory))
 
     # Severity của check PASS không được làm fail cả dataset; chỉ xét lỗi thật.
@@ -275,6 +300,7 @@ def run_quality(connection: sqlite3.Connection, inventory: dict[str, Any] | None
         "severity_order": SEVERITY_ORDER,
         "completeness": completeness_report(connection),
         "leakage": leakage,
+        "overlap": overlap,
         "fingerprint": dataset_fingerprint(connection),
     }
 
@@ -286,7 +312,19 @@ def completeness_report(connection: sqlite3.Connection) -> dict[str, object]:
     feature_fields = {
         "RSI": "rsi", "ATR": "atr_percent", "StdDev": "return_std_20", "Z-score": "price_z20",
     }
-    result: dict[str, object] = {"episodes": total}
+    result: dict[str, object] = {
+        "episodes": total,
+        "audit_observations": total,
+        "unique_opportunities": int(connection.execute(
+            "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes"
+        ).fetchone()[0]),
+        "V81_unique_opportunities": int(connection.execute(
+            "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes WHERE audit_version = 'V81'"
+        ).fetchone()[0]),
+        "V82_unique_opportunities": int(connection.execute(
+            "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes WHERE audit_version = 'V82'"
+        ).fetchone()[0]),
+    }
     for label, field in feature_fields.items():
         count = int(connection.execute(f"SELECT COUNT(*) FROM episode_features WHERE {field} IS NOT NULL").fetchone()[0])
         result[f"{label}_percent"] = percentage(count)

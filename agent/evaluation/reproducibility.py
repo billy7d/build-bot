@@ -13,6 +13,7 @@ from ..memory.database import migration_versions
 
 
 NORMALIZATION_VERSION = "normalization/1"
+CANONICAL_LINKAGE_VERSION = "canonical-opportunity/1"
 DATASET_VERSION = "TA-DATA-V1"
 
 
@@ -20,6 +21,22 @@ def current_git_commit(root: Path) -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def repository_base_sha(root: Path) -> str | None:
+    """Lấy merge-base thật với origin/main, không dùng HEAD làm Base SHA."""
+
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", "origin/main"],
             cwd=root,
             check=True,
             capture_output=True,
@@ -53,6 +70,7 @@ def fingerprint_inputs(connection: sqlite3.Connection) -> dict[str, object]:
         "schema_versions": migration_versions(connection),
         "parser_versions": parser_versions,
         "normalization_version": NORMALIZATION_VERSION,
+        "canonical_linkage_version": CANONICAL_LINKAGE_VERSION,
     }
 
 
@@ -80,19 +98,41 @@ def build_manifest(
         WHERE episode_kind = 'BLOCKED_OPPORTUNITY' AND audit_version = 'V82'
         """
     ).fetchone()[0])
+    audit_observations = _count(connection, "trading_episodes")
+    unique_opportunities = int(connection.execute(
+        "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes"
+    ).fetchone()[0])
+    v81_unique = int(connection.execute(
+        "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes WHERE audit_version = 'V81'"
+    ).fetchone()[0])
+    v82_unique = int(connection.execute(
+        "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes WHERE audit_version = 'V82'"
+    ).fetchone()[0])
+    overlap = (quality or {}).get("overlap", {})
+    generation_commit = current_git_commit(root)
     return {
         "dataset_version": DATASET_VERSION,
-        "git_commit": current_git_commit(root),
+        "repository_base_sha": repository_base_sha(root),
+        "dataset_generation_commit": generation_commit,
+        "pr_head": generation_commit,
         "dataset_fingerprint": dataset_fingerprint(connection),
         "schema_versions": migration_versions(connection),
         "parser_versions": fingerprint_inputs(connection)["parser_versions"],
         "normalization_version": NORMALIZATION_VERSION,
+        "canonical_linkage_version": CANONICAL_LINKAGE_VERSION,
         "sources": _count(connection, "source_artifacts"),
         "strategies": strategy_versions,
         "audits": audit_versions,
         "experiments": _count(connection, "experiments"),
         "presets": _count(connection, "presets"),
-        "episodes": _count(connection, "trading_episodes"),
+        "episodes": audit_observations,
+        "audit_observations": audit_observations,
+        "unique_opportunities": unique_opportunities,
+        "unique_v81_opportunities": v81_unique,
+        "unique_v82_opportunities": v82_unique,
+        "confirmed_same_underlying_opportunities": overlap.get("confirmed_same_underlying_opportunities", 0),
+        "confirmed_independent_opportunities": overlap.get("confirmed_independent_opportunities", 0),
+        "ambiguous_matches": overlap.get("ambiguous_matches", 0),
         "features": _count(connection, "episode_features"),
         "executions": _count(connection, "executions"),
         "outcomes": _count(connection, "episode_outcomes"),

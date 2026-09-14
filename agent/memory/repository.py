@@ -200,7 +200,7 @@ class TradingMemoryRepository:
             "source_timezone", "timestamp_utc", "side", "episode_kind", "candidate_type",
             "candidate_exists", "was_executed", "execution_id", "entry_candidate",
             "stop_candidate", "target_candidate", "planned_risk_r", "fold_type",
-            "raw_event_id", "raw_fields_json", "created_at",
+            "raw_event_id", "raw_fields_json", "canonical_opportunity_id", "created_at",
         )
         values = tuple(record.get(column) for column in columns)
         self.connection.execute(
@@ -315,6 +315,7 @@ class TradingMemoryRepository:
         fold_type: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
+        canonical_opportunity_id: str | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
         clauses = []
@@ -326,6 +327,7 @@ class TradingMemoryRepository:
             ("timeframe", timeframe),
             ("episode_kind", episode_kind),
             ("fold_type", fold_type),
+            ("canonical_opportunity_id", canonical_opportunity_id),
         ):
             if value is not None:
                 clauses.append(f"{column} = ?")
@@ -348,6 +350,38 @@ class TradingMemoryRepository:
             params,
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_opportunity_observations(self, canonical_opportunity_id: str) -> list[dict[str, Any]]:
+        """Lấy toàn bộ audit observations thuộc một opportunity canonical."""
+
+        rows = self.connection.execute(
+            """
+            SELECT * FROM trading_episodes
+            WHERE canonical_opportunity_id = ?
+            ORDER BY audit_version, timestamp_utc, episode_id
+            """,
+            (canonical_opportunity_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def count_unique_opportunities(self, *, audit_version: str | None = None) -> int:
+        """Đếm opportunity, không đếm lặp observation giữa các audit."""
+
+        clause = " WHERE audit_version = ?" if audit_version is not None else ""
+        params = (audit_version,) if audit_version is not None else ()
+        return int(self.connection.execute(
+            f"SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes{clause}",
+            params,
+        ).fetchone()[0])
+
+    def count_audit_observations(self, *, audit_version: str | None = None) -> int:
+        """Đếm số row quan sát audit, kể cả các row cùng canonical id."""
+
+        clause = " WHERE audit_version = ?" if audit_version is not None else ""
+        params = (audit_version,) if audit_version is not None else ()
+        return int(self.connection.execute(
+            f"SELECT COUNT(*) FROM trading_episodes{clause}", params
+        ).fetchone()[0])
 
     def count(self, table: str) -> int:
         allowed = {

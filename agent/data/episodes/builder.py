@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ..models import NormalizedEvent
+from ..normalization.canonical import canonical_opportunity_id
 from ..normalization.identifiers import (
     deterministic_episode_id,
     normalize_fold_type,
@@ -314,6 +315,7 @@ def build_bundle(
         "fold_type": normalize_fold_type(fields.get("fold"), event.event_time_utc),
         "raw_event_id": event.raw_event_id,
         "raw_fields_json": json.dumps(dict(event.raw_fields), ensure_ascii=False, sort_keys=True, allow_nan=False),
+        "canonical_opportunity_id": canonical_opportunity_id(event),
         # Dùng mốc event ổn định để rebuild cùng raw tạo record deterministic.
         "created_at": event.event_time_utc,
     }

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .data_quality import completeness_report
+from .opportunity_overlap import build_overlap_audit, render_overlap_audit
 from .reproducibility import dataset_fingerprint
 from ..memory.database import integrity_status, migration_versions
 
@@ -77,6 +78,14 @@ def render_source_mapping() -> str:
 | `completed`, `incomplete_reason` | outcome resolution metadata |
 
 Feature provenance is `SOURCE_REPORTED` for values copied from CSV. Missing values remain SQL `NULL`.
+
+## Canonical opportunity linkage
+
+- `trading_episodes.canonical_opportunity_id` là identity audit-neutral cho cùng underlying opportunity.
+- Identity key dùng `strategy_version`, `symbol`, `timeframe`, candidate semantic chung, `side`, `entry_candidate`, `stop_candidate` và `risk_distance` đã chuẩn hóa số.
+- Identity không dùng `audit_version`, source path, parser version, database id hoặc raw `event_id`.
+- Một canonical id có thể có nhiều audit observations; không gộp row và không làm mất raw provenance.
+- `canonical_opportunity_id` phải được mang theo mọi export Phase 2; không lấy hai observation cùng canonical id làm hai mẫu độc lập.
 """
 
 
@@ -105,12 +114,15 @@ def render_foundation_report(
         if not item.get("passed")
     )
     integrity = integrity_status(connection)
+    overlap = quality.get("overlap") or build_overlap_audit(connection)
     return f"""# Trading Agent Phase 1 — Data Foundation Report
 
 ## Status
 
 - Dataset: `{manifest.get('dataset_version')}`
-- Base SHA: `{manifest.get('git_commit') or 'UNKNOWN'}`
+- Repository base SHA: `{manifest.get('repository_base_sha') or 'UNKNOWN'}`
+- Dataset generation/implementation commit: `{manifest.get('dataset_generation_commit') or 'UNKNOWN'}`
+- PR head captured at generation: `{manifest.get('pr_head') or 'UNKNOWN'}`
 - Dataset fingerprint: `{dataset_fingerprint(connection)}`
 - Quality: **{quality.get('status')}** ({dict(sorted(quality_checks.items()))})
 - SQLite migrations: `{', '.join(migration_versions(connection))}`
@@ -130,7 +142,10 @@ def render_foundation_report(
 ## Coverage
 
 - Episode date range UTC: `{start}` → `{end}`
-- Episodes: `{manifest.get('episodes', 0)}`
+- Audit observations / episode rows: `{manifest.get('episodes', 0)}`
+- Unique underlying opportunities: `{manifest.get('unique_opportunities', overlap.get('unique_v81_opportunities', 0) + overlap.get('unique_v82_opportunities', 0) - overlap.get('confirmed_same_underlying_opportunities', 0))}`
+- Unique V81 / V82 opportunities: `{overlap.get('unique_v81_opportunities', 0)} / {overlap.get('unique_v82_opportunities', 0)}`
+- Confirmed same underlying V81↔V82: `{overlap.get('confirmed_same_underlying_opportunities', 0)}`; independent canonical opportunities: `{overlap.get('confirmed_independent_opportunities', 0)}`; ambiguous: `{overlap.get('ambiguous_matches', 0)}`
 - Executed: `{int(connection.execute("SELECT COUNT(*) FROM trading_episodes WHERE was_executed = 1").fetchone()[0])}`; non-executed candidates: `{int(connection.execute("SELECT COUNT(*) FROM trading_episodes WHERE was_executed = 0").fetchone()[0])}`
 - Generic outcomes resolved/incomplete: `{completed}/{incomplete}`
 - Executions imported: `{manifest.get('executions', 0)}`
@@ -152,7 +167,7 @@ Feature columns contain event-time values only. Outcome, counterfactual and oppo
 
 ## Required query coverage
 
-The repository supports V26 LONG by date, executed V26 trades, V81 rank slices, V82 blocked opposite/same-side, active→blocked direction, control population, pre/post Add1 filters, opportunity diff, incomplete and AMBIGUOUS first-hit queries through `TradingMemoryRepository.query_episodes` plus SQL joins.
+The repository supports queries A-N plus O (unique canonical opportunity count) and P (all audit observations for one canonical id). `query_episodes(canonical_opportunity_id=...)`, `get_opportunity_observations(...)`, `count_unique_opportunities(...)` and `count_audit_observations(...)` preserve the distinction between opportunities and observations.
 
 ## Leakage and integrity
 
@@ -174,6 +189,7 @@ The repository supports V26 LONG by date, executed V26 trades, V81 rank slices, 
 2. This checkout contains V81/V82 shadow telemetry but no separate V26/V63 execution trade-history artifacts or backtests directory.
 3. Parquet export uses an optional Arrow writer when available and a dependency-free uncompressed writer otherwise; SQLite remains the authoritative relational store.
 4. Source files under ignored MT5 runtime copies are inventoried as duplicate paths or excluded runtime files; canonical raw V81/V82 paths are used for import.
+5. Unknown metadata artifacts, inferred timezone metadata and duplicate runtime copies remain explicit warnings; they are not silently promoted to episode data.
 """
 
 
@@ -189,5 +205,10 @@ def write_reports(
     (output_dir / "source_mapping.md").write_text(render_source_mapping(), encoding="utf-8")
     (output_dir / "data_foundation_report.md").write_text(
         render_foundation_report(connection, inventory=inventory, quality=quality, manifest=manifest),
+        encoding="utf-8",
+    )
+    overlap = quality.get("overlap") or build_overlap_audit(connection)
+    (output_dir / "v81_v82_overlap_audit.md").write_text(
+        render_overlap_audit(overlap),
         encoding="utf-8",
     )

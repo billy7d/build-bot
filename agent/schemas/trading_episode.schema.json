@@ -3,7 +3,7 @@
   "$id": "https://build-bot.local/schemas/trading-episode.schema.json",
   "title": "Trading Episode",
   "type": "object",
-  "required": ["episode_id", "source_artifact_id", "symbol", "timeframe", "timestamp_utc", "side", "episode_kind", "candidate_type", "candidate_exists", "was_executed", "fold_type"],
+  "required": ["episode_id", "source_artifact_id", "symbol", "timeframe", "timestamp_utc", "side", "episode_kind", "candidate_type", "candidate_exists", "was_executed", "fold_type", "canonical_opportunity_id"],
   "properties": {
     "episode_id": {"type": "string", "minLength": 1},
     "source_artifact_id": {"type": "integer", "minimum": 1},
@@ -17,7 +17,8 @@
     "candidate_type": {"enum": ["BASE", "PYRAMID", "FLAT", "BLOCKED", "CONTROL", "UNKNOWN"]},
     "candidate_exists": {"enum": [0, 1]},
     "was_executed": {"enum": [0, 1]},
-    "fold_type": {"enum": ["TRAIN", "VALIDATION", "OOS", "FORWARD", "SMOKE", "UNKNOWN"]}
+    "fold_type": {"enum": ["TRAIN", "VALIDATION", "OOS", "FORWARD", "SMOKE", "UNKNOWN"]},
+    "canonical_opportunity_id": {"type": "string", "minLength": 1}
   },
   "additionalProperties": true
 }
