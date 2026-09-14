@@ -1,0 +1,38 @@
+{
+  "version": "phase2-config/1",
+  "feature_set_version": "feature-store/1",
+  "split": {
+    "version": "phase2-split/1",
+    "train_end": "2024-01-01T00:00:00Z",
+    "validation_end": "2025-01-01T00:00:00Z",
+    "forward_start": null,
+    "train_fraction": 0.6,
+    "validation_fraction": 0.2,
+    "forward_status": "RESERVED_NOT_USED"
+  },
+  "similarity": {
+    "version": "similarity/1",
+    "top_k": 20,
+    "min_neighbors": 5,
+    "min_feature_overlap": 3,
+    "same_symbol": true,
+    "same_timeframe": true,
+    "side_mode": "same",
+    "regime_mode": "same_composite",
+    "require_outcome_available": true,
+    "max_distance": null
+  },
+  "model": {
+    "version": "scoring/1",
+    "seed": 42,
+    "logistic_l2": 1.0,
+    "logistic_iterations": 400,
+    "logistic_learning_rate": 0.05,
+    "ridge_l2": 1.0,
+    "calibration_iterations": 250,
+    "calibration_learning_rate": 0.03,
+    "min_training_labels": 2
+  },
+  "regime_version": "regime/1",
+  "random_seed": 42
+}
