@@ -8,6 +8,12 @@
     },
     {
       "count": 0,
+      "name": "canonical_linkage_schema",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
       "name": "failed_source_artifacts",
       "passed": true,
       "severity": "ERROR"
@@ -29,6 +35,12 @@
       "name": "missing_episode_timestamps",
       "passed": true,
       "severity": "ERROR"
+    },
+    {
+      "count": 0,
+      "name": "missing_canonical_opportunity_id",
+      "passed": true,
+      "severity": "FATAL"
     },
     {
       "count": 0,
@@ -140,6 +152,21 @@
       "severity": "FATAL"
     },
     {
+      "count": 0,
+      "detail": {
+        "same_audit_duplicate_groups": 0
+      },
+      "name": "unexpected_canonical_collisions",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
+      "count": 0,
+      "name": "same_audit_canonical_duplicates",
+      "passed": true,
+      "severity": "FATAL"
+    },
+    {
       "count": 27,
       "name": "unknown_source_artifacts",
       "passed": false,
@@ -166,11 +193,15 @@
     "Regime_percent": 100.0,
     "Spread_percent": 100.0,
     "StdDev_percent": 50.0,
+    "V81_unique_opportunities": 3618,
     "V82_shadow_outcome_percent": 49.7236,
+    "V82_unique_opportunities": 3618,
     "Z-score_percent": 50.0,
-    "episodes": 7236
+    "audit_observations": 7236,
+    "episodes": 7236,
+    "unique_opportunities": 3618
   },
-  "fingerprint": "02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f",
+  "fingerprint": "2dc6dcd74928ed00923fd21f032ba0700f1c9c50459c9e0159872aa2045680ff",
   "leakage": {
     "checked_feature_rows": 7236,
     "checked_outcome_rows": 10794,
@@ -204,6 +235,101 @@
     "lookahead_violations": 0,
     "passed": true,
     "violations": []
+  },
+  "overlap": {
+    "ambiguous_matches": 0,
+    "audit_observations": 7236,
+    "confirmed_independent_opportunities": 0,
+    "confirmed_same_underlying_opportunities": 3618,
+    "exact_timestamp_side_matches": 0,
+    "examples": [
+      {
+        "canonical_opportunity_id": "opp-0006e6e5394398b6f8e39a3fea8d3fea599c9e29052b06a16b4b4d5c5ffb45af",
+        "v81_episode_id": "BTCUSD-H1-20230105T120000Z-V26-V81-LONG-BLOCKED-OPPORTUNITY-0001",
+        "v81_raw_event_id": "17",
+        "v81_timestamp_utc": "2023-01-05T12:00:00Z",
+        "v82_episode_id": "BTCUSD-H1-20230105T110000Z-V26-V82-LONG-BLOCKED-OPPORTUNITY-0001",
+        "v82_raw_event_id": "1672916400_G_10_LONG_BLOCKED_SAME_SIDE",
+        "v82_timestamp_utc": "2023-01-05T11:00:00Z"
+      },
+      {
+        "canonical_opportunity_id": "opp-000d77e877f170c808d4bb66a6f5b4e8c6cb69b40e26766aa2a02b6e4427270c",
+        "v81_episode_id": "BTCUSD-H1-20260325T090000Z-V26-V81-LONG-BLOCKED-OPPORTUNITY-0001",
+        "v81_raw_event_id": "230",
+        "v81_timestamp_utc": "2026-03-25T09:00:00Z",
+        "v82_episode_id": "BTCUSD-H1-20260325T080000Z-V26-V82-LONG-BLOCKED-OPPORTUNITY-0001",
+        "v82_raw_event_id": "1774425600_G_82_LONG_BLOCKED_SAME_SIDE",
+        "v82_timestamp_utc": "2026-03-25T08:00:00Z"
+      },
+      {
+        "canonical_opportunity_id": "opp-0017545e34e8e548b1519f8414cf345e6cf53b88232e74d58ecfb7fb61ed6df3",
+        "v81_episode_id": "BTCUSD-H1-20260219T120000Z-V26-V81-SHORT-BLOCKED-OPPORTUNITY-0001",
+        "v81_raw_event_id": "138",
+        "v81_timestamp_utc": "2026-02-19T12:00:00Z",
+        "v82_episode_id": "BTCUSD-H1-20260219T110000Z-V26-V82-SHORT-BLOCKED-OPPORTUNITY-0001",
+        "v82_raw_event_id": "1771498800_G_52_SHORT_BLOCKED_SAME_SIDE",
+        "v82_timestamp_utc": "2026-02-19T11:00:00Z"
+      }
+    ],
+    "field_comparison": {
+      "candidate_semantic_entry_stop_risk_exact_matches": 3618,
+      "setup_generation_present": {
+        "V81": 0,
+        "V82": 3618
+      },
+      "setup_generation_used_as_join_key": false,
+      "side_exact_matches": 3618,
+      "signal_context_exact_matches": {
+        "composite_regime_score->composite_regime_score": 3618,
+        "d1_regime_score->d1_regime_score": 3618,
+        "entry_atr_pct->entry_atr_pct": 35,
+        "entry_rsi->shadow_entry_rsi": 32,
+        "entry_spread_r->entry_spread_r": 40,
+        "h4_regime_score->h4_regime_score": 3618
+      },
+      "symbol_exact_matches": 3618,
+      "timeframe_exact_matches": 3618
+    },
+    "intentional_cross_audit_observation_groups": 3618,
+    "methodology": {
+      "canonical_match": "Giao của canonical_opportunity_id; mỗi nhóm được kiểm tra identity key và một row mỗi audit.",
+      "exact_timestamp_side": "Giao của (timestamp_utc, side) sau normalization, không bù giờ.",
+      "excluded_fields": [
+        "audit_version",
+        "source path",
+        "parser version",
+        "database id",
+        "raw_event_id"
+      ],
+      "identity_fields": [
+        "strategy_version",
+        "symbol",
+        "timeframe",
+        "candidate_semantic",
+        "side",
+        "entry_candidate",
+        "stop_candidate",
+        "risk_distance"
+      ],
+      "independence_rule": "Một episode/audit observation không mặc định là một opportunity độc lập; chỉ canonical id khác mới là opportunity khác.",
+      "timestamp_identity_note": "Timestamp không đưa vào hash canonical vì raw V81/V82 lệch một giờ; candidate identity tuple phải unique trên dataset và được quality gate kiểm tra collision.",
+      "timestamp_only": "Giao của timestamp_utc distinct, không dùng side hay price.",
+      "timestamp_reconciliation": "V81 timestamp_utc lớn hơn V82 đúng 1 giờ ở mọi nhóm confirmed; chỉ dùng cho audit linkage, không rewrite source_time/source_timezone/raw fields.",
+      "timestamp_side_entry": "Giao của (timestamp_utc, side, entry_candidate)."
+    },
+    "raw_event_id_matches": 0,
+    "same_audit_duplicate_canonical_groups": 0,
+    "schema": "trading_memory_v81_v82_overlap_audit_v1",
+    "timestamp_offset_hours": {
+      "1": 3618
+    },
+    "timestamp_only_matches": 14,
+    "timestamp_side_entry_matches": 0,
+    "unexpected_canonical_collisions": 0,
+    "unique_v81_opportunities": 3618,
+    "unique_v82_opportunities": 3618,
+    "v81_audit_observations": 3618,
+    "v82_audit_observations": 3618
   },
   "severity_order": {
     "ERROR": 2,

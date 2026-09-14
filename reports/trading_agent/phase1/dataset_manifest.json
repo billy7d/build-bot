@@ -1,16 +1,21 @@
 {
+  "ambiguous_matches": 0,
+  "audit_observations": 7236,
   "audits": [
     "V81",
     "V82"
   ],
   "blocked_opportunities": 2823,
-  "dataset_fingerprint": "02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f",
+  "canonical_linkage_version": "canonical-opportunity/1",
+  "confirmed_independent_opportunities": 0,
+  "confirmed_same_underlying_opportunities": 3618,
+  "dataset_fingerprint": "2dc6dcd74928ed00923fd21f032ba0700f1c9c50459c9e0159872aa2045680ff",
+  "dataset_generation_commit": "a834b18510d2b752f840bedd7a6e204c329ecb5d",
   "dataset_version": "TA-DATA-V1",
   "episodes": 7236,
   "executions": 0,
   "experiments": 8,
   "features": 7236,
-  "git_commit": "58b9ae637dbb4ee451782671d9be0f07bfbe7eeb",
   "normalization_version": "normalization/1",
   "opportunity_context": 3618,
   "opportunity_outcomes": 3618,
@@ -33,19 +38,26 @@
       "parser_version": "v82-parser/1"
     }
   ],
+  "pr_head": "a834b18510d2b752f840bedd7a6e204c329ecb5d",
   "presets": 79,
   "quality_status": "PASS",
+  "raw_v82_observations": 3618,
   "raw_v82_status": "AVAILABLE",
+  "repository_base_sha": "d8aa252ba9a5de89b9fb75c8bc1016750d3f2862",
   "schema_versions": [
     "001",
     "002",
     "003",
     "004",
-    "005"
+    "005",
+    "006"
   ],
   "sources": 126,
   "strategies": [
     "V26",
     "V63"
-  ]
+  ],
+  "unique_opportunities": 3618,
+  "unique_v81_opportunities": 3618,
+  "unique_v82_opportunities": 3618
 }

@@ -3,10 +3,12 @@
 ## Status
 
 - Dataset: `TA-DATA-V1`
-- Base SHA: `58b9ae637dbb4ee451782671d9be0f07bfbe7eeb`
-- Dataset fingerprint: `02c08d9abee477327aa58fbab09e0cbf447ec80c89ca9ff9ae3cc495b5f7433f`
+- Repository base SHA: `d8aa252ba9a5de89b9fb75c8bc1016750d3f2862`
+- Dataset generation/implementation commit: `a834b18510d2b752f840bedd7a6e204c329ecb5d`
+- PR head captured at generation: `a834b18510d2b752f840bedd7a6e204c329ecb5d`
+- Dataset fingerprint: `2dc6dcd74928ed00923fd21f032ba0700f1c9c50459c9e0159872aa2045680ff`
 - Quality: **PASS** ({'WARN': 3})
-- SQLite migrations: `001, 002, 003, 004, 005`
+- SQLite migrations: `001, 002, 003, 004, 005, 006`
 - SQLite foreign key check: **PASS**
 - SQLite integrity check: **PASS**
 
@@ -23,7 +25,11 @@
 ## Coverage
 
 - Episode date range UTC: `2023-01-01T00:00:00Z` → `2026-06-30T18:00:00Z`
-- Episodes: `7236`
+- Audit observations / episode rows: `7236`
+- Raw V82 observations: `3618`
+- Unique underlying opportunities: `3618`
+- Unique V81 / V82 opportunities: `3618 / 3618`
+- Confirmed same underlying V81↔V82: `3618`; independent canonical opportunities: `0`; ambiguous: `0`
 - Executed: `0`; non-executed candidates: `7236`
 - Generic outcomes resolved/incomplete: `7196/40`
 - Executions imported: `0`
@@ -46,9 +52,13 @@
   "Regime_percent": 100.0,
   "Spread_percent": 100.0,
   "StdDev_percent": 50.0,
+  "V81_unique_opportunities": 3618,
   "V82_shadow_outcome_percent": 49.7236,
+  "V82_unique_opportunities": 3618,
   "Z-score_percent": 50.0,
-  "episodes": 7236
+  "audit_observations": 7236,
+  "episodes": 7236,
+  "unique_opportunities": 3618
 }
 ```
 
@@ -56,7 +66,7 @@ Feature columns contain event-time values only. Outcome, counterfactual and oppo
 
 ## Required query coverage
 
-The repository supports V26 LONG by date, executed V26 trades, V81 rank slices, V82 blocked opposite/same-side, active→blocked direction, control population, pre/post Add1 filters, opportunity diff, incomplete and AMBIGUOUS first-hit queries through `TradingMemoryRepository.query_episodes` plus SQL joins.
+The repository supports queries A-N plus O (unique canonical opportunity count) and P (all audit observations for one canonical id). `query_episodes(canonical_opportunity_id=...)`, `get_opportunity_observations(...)`, `count_unique_opportunities(...)` and `count_audit_observations(...)` preserve the distinction between opportunities and observations.
 
 ## Leakage and integrity
 
@@ -78,3 +88,4 @@ The repository supports V26 LONG by date, executed V26 trades, V81 rank slices, 
 2. This checkout contains V81/V82 shadow telemetry but no separate V26/V63 execution trade-history artifacts or backtests directory.
 3. Parquet export uses an optional Arrow writer when available and a dependency-free uncompressed writer otherwise; SQLite remains the authoritative relational store.
 4. Source files under ignored MT5 runtime copies are inventoried as duplicate paths or excluded runtime files; canonical raw V81/V82 paths are used for import.
+5. Unknown metadata artifacts, inferred timezone metadata and duplicate runtime copies remain explicit warnings; they are not silently promoted to episode data.

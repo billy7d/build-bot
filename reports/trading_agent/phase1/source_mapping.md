@@ -47,3 +47,11 @@
 | `completed`, `incomplete_reason` | outcome resolution metadata |
 
 Feature provenance is `SOURCE_REPORTED` for values copied from CSV. Missing values remain SQL `NULL`.
+
+## Canonical opportunity linkage
+
+- `trading_episodes.canonical_opportunity_id` là identity audit-neutral cho cùng underlying opportunity.
+- Identity key dùng `strategy_version`, `symbol`, `timeframe`, candidate semantic chung, `side`, `entry_candidate`, `stop_candidate` và `risk_distance` đã chuẩn hóa số.
+- Identity không dùng `audit_version`, source path, parser version, database id hoặc raw `event_id`.
+- Một canonical id có thể có nhiều audit observations; không gộp row và không làm mất raw provenance.
+- `canonical_opportunity_id` phải được mang theo mọi export Phase 2; không lấy hai observation cùng canonical id làm hai mẫu độc lập.
