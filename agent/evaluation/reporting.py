@@ -143,6 +143,7 @@ def render_foundation_report(
 
 - Episode date range UTC: `{start}` → `{end}`
 - Audit observations / episode rows: `{manifest.get('episodes', 0)}`
+- Raw V82 observations: `{manifest.get('raw_v82_observations', overlap.get('v82_audit_observations', 0))}`
 - Unique underlying opportunities: `{manifest.get('unique_opportunities', overlap.get('unique_v81_opportunities', 0) + overlap.get('unique_v82_opportunities', 0) - overlap.get('confirmed_same_underlying_opportunities', 0))}`
 - Unique V81 / V82 opportunities: `{overlap.get('unique_v81_opportunities', 0)} / {overlap.get('unique_v82_opportunities', 0)}`
 - Confirmed same underlying V81↔V82: `{overlap.get('confirmed_same_underlying_opportunities', 0)}`; independent canonical opportunities: `{overlap.get('confirmed_independent_opportunities', 0)}`; ambiguous: `{overlap.get('ambiguous_matches', 0)}`

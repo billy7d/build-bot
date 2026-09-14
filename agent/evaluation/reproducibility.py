@@ -108,6 +108,9 @@ def build_manifest(
     v82_unique = int(connection.execute(
         "SELECT COUNT(DISTINCT canonical_opportunity_id) FROM trading_episodes WHERE audit_version = 'V82'"
     ).fetchone()[0])
+    raw_v82_observations = int(connection.execute(
+        "SELECT COUNT(*) FROM trading_episodes WHERE audit_version = 'V82'"
+    ).fetchone()[0])
     overlap = (quality or {}).get("overlap", {})
     generation_commit = current_git_commit(root)
     return {
@@ -130,6 +133,7 @@ def build_manifest(
         "unique_opportunities": unique_opportunities,
         "unique_v81_opportunities": v81_unique,
         "unique_v82_opportunities": v82_unique,
+        "raw_v82_observations": raw_v82_observations,
         "confirmed_same_underlying_opportunities": overlap.get("confirmed_same_underlying_opportunities", 0),
         "confirmed_independent_opportunities": overlap.get("confirmed_independent_opportunities", 0),
         "ambiguous_matches": overlap.get("ambiguous_matches", 0),
