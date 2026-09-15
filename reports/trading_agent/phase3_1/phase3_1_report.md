@@ -10,7 +10,7 @@ runtime SQLite database.
 2. **Base SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0`
 3. **Head before parity evidence commit:** `10a54dff750512ded8a6f89affc99ca7b4a270a5`; parity evidence commit: `8d90daea4c42fc77f842ba306aa6c48e8dc65dad`
 4. **PR URL:** `https://github.com/billy7d/build-bot/pull/4`.
-5. **CI results:** `PASS` on readiness head `e91d091e7f9a8a31baa4e4d6351dd09d9aa956ab`: [Phase 3.1 forward validation](https://github.com/billy7d/build-bot/actions/runs/34981612234), [Phase 3 validation](https://github.com/billy7d/build-bot/actions/runs/34981612301), and [Phase 2 validation](https://github.com/billy7d/build-bot/actions/runs/34981612248). Local Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, and `git diff --check` PASS.
+5. **CI results:** `PASS` on readiness head `e045c0848c48b02b9aec5905dbe3c15ff03f898f`: [Phase 3.1 forward validation](https://github.com/billy7d/build-bot/actions/runs/34982129488), [Phase 3 validation](https://github.com/billy7d/build-bot/actions/runs/34982129594), and [Phase 2 validation](https://github.com/billy7d/build-bot/actions/runs/34982129469). Local Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, and `git diff --check` PASS.
 6. **Merge SHA:** `N/A` — explicit STOP BEFORE MERGE instruction; no merge was performed.
 7. **Final main SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0` (main was not advanced).
 
