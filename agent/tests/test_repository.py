@@ -15,7 +15,7 @@ class RepositoryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             connection = connect_database(Path(directory) / "memory.db")
             apply_migrations(connection)
-            self.assertEqual(migration_versions(connection), ["001", "002", "003", "004", "005", "006", "007"])
+            self.assertEqual(migration_versions(connection), ["001", "002", "003", "004", "005", "006", "007", "008"])
             self.assertEqual(fingerprint_inputs(connection)["schema_versions"], ["001", "002", "003", "004", "005", "006"])
             repository = TradingMemoryRepository(connection)
             with connection:
