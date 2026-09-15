@@ -7,6 +7,10 @@
 - `EXECUTION_BEHAVIOR_DIFFERENCE_COUNT`: `NOT_AVAILABLE`
 - `MERGE_READY`: `NO`
 
+Base: `6c3b9574f962f55bfb01e168f70eef0cad5e029c`
+
+Candidate head: `3578fb83bd3796ec4b79dd80f6dc5f91cb4d00d4`
+
 The parity participants are defined but were not executed in this revision:
 
 - Baseline: original EA at the `main` base revision, before the canonical telemetry

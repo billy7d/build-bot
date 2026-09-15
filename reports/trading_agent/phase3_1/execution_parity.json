@@ -14,7 +14,7 @@
   },
   "candidate_artifact": {
     "role": "canonical-opportunity telemetry EA on current branch",
-    "source_commit": "WORKTREE_NOT_COMMITTED_AT_EVIDENCE_CAPTURE",
+    "source_commit": "3578fb83bd3796ec4b79dd80f6dc5f91cb4d00d4",
     "source": "outputs/Mentor_RSI_MTF_v1.mq5",
     "compiled_ex5": "outputs/Mentor_RSI_MTF_v1.ex5",
     "compiled_ex5_present": true,

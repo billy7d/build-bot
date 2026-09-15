@@ -1,5 +1,8 @@
 {
   "report_schema": "phase3-telemetry-coverage/1",
+  "branch": "feature/trading-agent-phase3-canonical-telemetry",
+  "base_sha": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
+  "head_sha": "3578fb83bd3796ec4b79dd80f6dc5f91cb4d00d4",
   "status": "BLOCKED_ON_MT5_TESTER_SYNCHRONIZATION",
   "old_primary_source": "EXECUTION_CANDIDATE",
   "new_primary_source": "CANONICAL_OPPORTUNITY",
