@@ -7,6 +7,7 @@ from agent.data.episodes.builder import build_bundle
 from agent.data.models import NormalizedEvent
 from agent.memory.database import apply_migrations, connect_database, integrity_status, migration_versions
 from agent.memory.repository import TradingMemoryRepository
+from agent.evaluation.reproducibility import fingerprint_inputs
 
 
 class RepositoryTests(unittest.TestCase):
@@ -14,7 +15,8 @@ class RepositoryTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             connection = connect_database(Path(directory) / "memory.db")
             apply_migrations(connection)
-            self.assertEqual(migration_versions(connection), ["001", "002", "003", "004", "005", "006"])
+            self.assertEqual(migration_versions(connection), ["001", "002", "003", "004", "005", "006", "007"])
+            self.assertEqual(fingerprint_inputs(connection)["schema_versions"], ["001", "002", "003", "004", "005", "006"])
             repository = TradingMemoryRepository(connection)
             with connection:
                 repository.register_strategy({"id": "V26", "name": "V26", "description": "base", "status": "BASELINE"})

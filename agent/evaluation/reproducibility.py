@@ -15,6 +15,7 @@ from ..memory.database import migration_versions
 NORMALIZATION_VERSION = "normalization/1"
 CANONICAL_LINKAGE_VERSION = "canonical-opportunity/1"
 DATASET_VERSION = "TA-DATA-V1"
+PHASE2_MIGRATION_START = "007"
 
 
 def current_git_commit(root: Path) -> str | None:
@@ -67,7 +68,13 @@ def fingerprint_inputs(connection: sqlite3.Connection) -> dict[str, object]:
     ]
     return {
         "source_sha256": source_hashes,
-        "schema_versions": migration_versions(connection),
+        # Phase 2 migrations are derived/modeling state and must not change
+        # the authoritative Phase 1 dataset identity.  This keeps the same
+        # source dataset fingerprint stable before and after migration 007.
+        "schema_versions": [
+            version for version in migration_versions(connection)
+            if version < PHASE2_MIGRATION_START
+        ],
         "parser_versions": parser_versions,
         "normalization_version": NORMALIZATION_VERSION,
         "canonical_linkage_version": CANONICAL_LINKAGE_VERSION,

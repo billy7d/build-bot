@@ -13,3 +13,9 @@ data/*.db
 data/*.sqlite
 *.parquet
 
+# Phase 2 generated state/results and serialized model are reproducible local
+# artifacts; lightweight review reports are intentionally kept trackable.
+reports/trading_agent/phase2/phase2_state.json
+reports/trading_agent/phase2/model_bundle.json
+reports/trading_agent/phase2/similarity_results.json
+
