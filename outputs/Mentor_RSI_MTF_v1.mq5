@@ -293,6 +293,9 @@ input bool ExportDiagnosticsCsv = false;
 input bool ExportForwardTelemetryCsv = false;
 // Side-channel JSONL cho Phase 3; không tham gia bất kỳ quyết định giao dịch nào.
 input bool ExportPhase3TelemetryJsonl = true;
+// Raw opportunity JSONL là observer độc lập; tester chỉ bật khi có test-output mode rõ ràng.
+input bool ExportPhase3OpportunityJsonl = false;
+input bool ExportPhase3OpportunityInTester = false;
 input int ForwardHeartbeatBars = 24;
 
 enum BiasState
@@ -785,6 +788,7 @@ int pyramidShadowCsvHandle = INVALID_HANDLE;
 int coreExitShadowCsvHandle = INVALID_HANDLE;
 int forwardCsvHandle = INVALID_HANDLE;
 int phase3TelemetryHandle = INVALID_HANDLE;
+int phase3OpportunityTelemetryHandle = INVALID_HANDLE;
 double forwardPeakEquity = 0.0;
 bool forwardConnectionKnown = false;
 bool forwardLastConnected = false;
@@ -1111,6 +1115,179 @@ void EmitPhase3Telemetry(ENUM_ORDER_TYPE type, const TFState &entry, const TFSta
    FileFlush(phase3TelemetryHandle);
 }
 
+string Phase3OpportunityFileName()
+{
+   return "phase3/opportunities/Mentor_RSI_MTF_" + IntegerToString(MagicNumber) + "_" +
+          _Symbol + "_" + Phase3TimeframeCode(EntryTF) + ".jsonl";
+}
+
+void OpenPhase3OpportunityTelemetry()
+{
+   if(!ExportPhase3OpportunityJsonl ||
+      ((bool)MQLInfoInteger(MQL_TESTER) && !ExportPhase3OpportunityInTester))
+      return;
+
+   FolderCreate("phase3", FILE_COMMON);
+   FolderCreate("phase3/opportunities", FILE_COMMON);
+   int flags = FILE_READ | FILE_WRITE | FILE_TXT | FILE_ANSI |
+               FILE_COMMON | FILE_SHARE_READ | FILE_SHARE_WRITE;
+   phase3OpportunityTelemetryHandle = FileOpen(Phase3OpportunityFileName(), flags);
+   if(phase3OpportunityTelemetryHandle == INVALID_HANDLE)
+   {
+      // Opportunity exporter chỉ là side-channel; lỗi ghi không được chặn strategy.
+      Print("PHASE3 opportunity exporter unavailable; strategy continues without canonical JSONL.");
+      return;
+   }
+   FileSeek(phase3OpportunityTelemetryHandle, 0, SEEK_END);
+   Print("PHASE3 opportunity exporter initialized schema=phase3-opportunity-observation/1 path=",
+         TerminalInfoString(TERMINAL_COMMONDATA_PATH), "\\Files\\", Phase3OpportunityFileName());
+}
+
+void EmitPhase3OpportunityFromShadow(const ShadowEvent &event)
+{
+   if(phase3OpportunityTelemetryHandle == INVALID_HANDLE)
+      return;
+
+   datetime eventTimeUtc = Phase3ServerTimeToUtc(event.eventTime);
+   if(event.eventTime <= 0 || eventTimeUtc <= 0 || event.entryPrice <= 0.0 || event.riskDistance <= _Point)
+      return;
+
+   string side = event.longSide ? "LONG" : "SHORT";
+   string strategyVersion = Phase3StrategyVersion();
+   string eventTimestamp = TimeToString(eventTimeUtc, TIME_DATE | TIME_SECONDS) + "Z";
+   string emittedTimestamp = TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS) + "Z";
+   string sourceObservationId = "MRSI:V81:" + strategyVersion + ":" + _Symbol + ":" +
+                                Phase3TimeframeCode(EntryTF) + ":" + IntegerToString(eventTimeUtc) + ":" +
+                                side + ":" + IntegerToString(event.eventId);
+   string payload = "{" +
+      "\"schema_version\":\"phase3-opportunity-observation/1\"," +
+      "\"source_observation_id\":" + Phase3JsonString(sourceObservationId) + "," +
+      "\"event_timestamp_utc\":" + Phase3JsonString(eventTimestamp) + "," +
+      "\"emitted_at_utc\":" + Phase3JsonString(emittedTimestamp) + "," +
+      "\"source_strategy\":\"Mentor_RSI_MTF\"," +
+      "\"source_strategy_version\":" + Phase3JsonString(strategyVersion) + "," +
+      "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+      "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(EntryTF)) + "," +
+      "\"side\":" + Phase3JsonString(side) + "," +
+      "\"source_audit_family\":\"V81\"," +
+      "\"source_event_type\":" + Phase3JsonString(event.conflictType) + "," +
+      "\"bar_state\":\"closed_bar\"," +
+      "\"candidate_type\":\"OPPORTUNITY_AUDIT\"," +
+      "\"context\":{" +
+         "\"features\":{" +
+            "\"rsi\":" + Phase3JsonNumber(event.entryRSI) + "," +
+            "\"atr_percent\":" + Phase3JsonNumber(event.entryATRPct) + "," +
+            "\"spread_r\":" + Phase3JsonNumber(event.entrySpreadR) + "," +
+            "\"return_std_20\":" + Phase3JsonNumber(event.entryReturnStd20) + "," +
+            "\"return_std_rank\":" + Phase3JsonNumber(event.entryReturnStdRank) + "," +
+            "\"price_std_20\":" + Phase3JsonNumber(event.entryPriceStd20) + "," +
+            "\"price_std_100\":" + Phase3JsonNumber(event.entryPriceStd100) + "," +
+            "\"price_std_pct_20\":" + Phase3JsonNumber(event.entryPriceStdPct20) + "," +
+            "\"std_ratio_20_100\":" + Phase3JsonNumber(event.entryStdRatio20_100) + "," +
+            "\"price_z20\":" + Phase3JsonNumber(event.entryPriceZ20) + "," +
+            "\"price_abs_z20\":" + Phase3JsonNumber(event.entryPriceAbsZ20) + "," +
+            "\"rsi_std_20\":" + Phase3JsonNumber(event.entryRSIStd20) + "," +
+            "\"rsi_std_rank\":" + Phase3JsonNumber(event.entryRSIStdRank) + "," +
+            "\"atr_return_std_ratio\":" + Phase3JsonNumber(event.entryATRReturnStdRatio) + "," +
+            "\"atr_return_std_rank\":" + Phase3JsonNumber(event.entryATRReturnStdRank) + "," +
+            "\"entry_atr_rank\":" + Phase3JsonNumber(event.entryATRRank) + "," +
+            "\"entry_efficiency_20\":" + Phase3JsonNumber(event.entryEfficiency20) + "," +
+            "\"initial_sl_atr\":" + Phase3JsonNumber(event.initialSLATR) + "," +
+            "\"d1_regime_score\":" + IntegerToString(event.d1RegimeScore) + "," +
+            "\"h4_regime_score\":" + IntegerToString(event.h4RegimeScore) + "," +
+            "\"composite_regime_score\":" + IntegerToString(event.compositeRegimeScore) + "," +
+            "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+            "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(EntryTF)) + "," +
+            "\"side\":" + Phase3JsonString(side) + "," +
+            "\"strategy_version\":" + Phase3JsonString(strategyVersion) +
+         "}" +
+      "}," +
+      "\"execution_context\":{" +
+         "\"active_position_state\":" + Phase3JsonString(event.livePositionState) + "," +
+         "\"active_side\":" + Phase3JsonString(event.livePositionSide) + "," +
+         "\"blocked_reason\":" + Phase3JsonString(event.conflictType) + "," +
+         "\"execution_eligible\":false" +
+      "}," +
+      "\"entry_price\":" + Phase3JsonNumber(event.entryPrice) + "," +
+      "\"hypothetical_entry_price\":" + Phase3JsonNumber(event.entryPrice) + "," +
+      "\"risk_distance\":" + Phase3JsonNumber(event.riskDistance) + "," +
+      "\"initial_sl_distance\":" + Phase3JsonNumber(event.riskDistance) + "," +
+      "\"hypothetical_initial_sl\":" + Phase3JsonNumber(event.initialSL) + "," +
+      "\"build_valid\":true" +
+   "}";
+   FileWriteString(phase3OpportunityTelemetryHandle, payload + "\r\n");
+   FileFlush(phase3OpportunityTelemetryHandle);
+}
+
+void EmitPhase3OpportunityFromBlocked(const BlockedSignalShadowEvent &event)
+{
+   if(phase3OpportunityTelemetryHandle == INVALID_HANDLE)
+      return;
+
+   datetime eventTimeUtc = Phase3ServerTimeToUtc(event.eventTime);
+   if(event.eventTime <= 0 || eventTimeUtc <= 0)
+      return;
+
+   string strategyVersion = Phase3StrategyVersion();
+   string eventTimestamp = TimeToString(eventTimeUtc, TIME_DATE | TIME_SECONDS) + "Z";
+   string emittedTimestamp = TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS) + "Z";
+   string sourceObservationId = "MRSI:V82:" + strategyVersion + ":" + _Symbol + ":" +
+                                Phase3TimeframeCode(EntryTF) + ":" + IntegerToString(eventTimeUtc) + ":" +
+                                event.side + ":" + event.eventType + ":" + event.eventId;
+   string payload = "{" +
+      "\"schema_version\":\"phase3-opportunity-observation/1\"," +
+      "\"source_observation_id\":" + Phase3JsonString(sourceObservationId) + "," +
+      "\"event_timestamp_utc\":" + Phase3JsonString(eventTimestamp) + "," +
+      "\"emitted_at_utc\":" + Phase3JsonString(emittedTimestamp) + "," +
+      "\"source_strategy\":\"Mentor_RSI_MTF\"," +
+      "\"source_strategy_version\":" + Phase3JsonString(strategyVersion) + "," +
+      "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+      "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(EntryTF)) + "," +
+      "\"side\":" + Phase3JsonString(event.side) + "," +
+      "\"source_audit_family\":\"V82\"," +
+      "\"source_event_type\":" + Phase3JsonString(event.eventType) + "," +
+      "\"bar_state\":\"closed_bar\"," +
+      "\"candidate_type\":\"OPPORTUNITY_AUDIT\"," +
+      "\"context\":{" +
+         "\"features\":{" +
+            "\"rsi\":" + Phase3JsonNumber(event.shadowEntryRSI) + "," +
+            "\"atr_percent\":" + Phase3JsonNumber(event.entryATRPct) + "," +
+            "\"spread_r\":" + Phase3JsonNumber(event.entrySpreadR) + "," +
+            "\"entry_atr_rank\":" + Phase3JsonNumber(event.entryATRRank) + "," +
+            "\"entry_efficiency_20\":" + Phase3JsonNumber(event.entryEfficiency20) + "," +
+            "\"initial_sl_atr\":" + Phase3JsonNumber(event.initialSLATR) + "," +
+            "\"d1_regime_score\":" + IntegerToString(event.d1RegimeScore) + "," +
+            "\"h4_regime_score\":" + IntegerToString(event.h4RegimeScore) + "," +
+            "\"composite_regime_score\":" + IntegerToString(event.compositeRegimeScore) + "," +
+            "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+            "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(EntryTF)) + "," +
+            "\"side\":" + Phase3JsonString(event.side) + "," +
+            "\"strategy_version\":" + Phase3JsonString(strategyVersion) + "," +
+            "\"d1_bias\":" + Phase3JsonString(event.d1Bias) + "," +
+            "\"h4_bias\":" + Phase3JsonString(event.h4Bias) + "," +
+            "\"h1_bias\":" + Phase3JsonString(event.h1Bias) +"," +
+            "\"source_regime\":null" +
+         "}" +
+      "}," +
+      "\"execution_context\":{" +
+         "\"active_side\":" + Phase3JsonString(event.activeSide) + "," +
+         "\"blocked_side\":" + Phase3JsonString(event.blockedSide) + "," +
+         "\"selected_side\":" + Phase3JsonString(event.actualSelectedSide) + "," +
+         "\"blocked_reason\":" + Phase3JsonString(event.eventType) + "," +
+         "\"execution_eligible\":false" +
+      "}," +
+      "\"entry_price\":" + Phase3JsonNumber(event.shadowEntryPrice) + "," +
+      "\"hypothetical_entry_price\":" + Phase3JsonNumber(event.shadowEntryPrice) + "," +
+      "\"risk_distance\":" + Phase3JsonNumber(event.shadowRiskDistance) + "," +
+      "\"initial_sl_distance\":" + Phase3JsonNumber(event.shadowRiskDistance) + "," +
+      "\"hypothetical_initial_sl\":" + Phase3JsonNumber(event.shadowInitialSL) + "," +
+      "\"build_valid\":" + (event.shadowBuildValid ? "true" : "false") + "," +
+      "\"build_reason\":" + Phase3JsonString(event.shadowBuildReason) +
+   "}";
+   FileWriteString(phase3OpportunityTelemetryHandle, payload + "\r\n");
+   FileFlush(phase3OpportunityTelemetryHandle);
+}
+
 bool OpenForwardTelemetry()
 {
    if(!ExportForwardTelemetryCsv)
@@ -1382,6 +1559,7 @@ int OnInit()
    if(!OpenForwardTelemetry())
       return INIT_FAILED;
    OpenPhase3Telemetry();
+   OpenPhase3OpportunityTelemetry();
 
    if(ExportDiagnosticsCsv)
    {
@@ -1607,6 +1785,12 @@ void OnDeinit(const int reason)
    {
       FileClose(phase3TelemetryHandle);
       phase3TelemetryHandle = INVALID_HANDLE;
+   }
+
+   if(phase3OpportunityTelemetryHandle != INVALID_HANDLE)
+   {
+      FileClose(phase3OpportunityTelemetryHandle);
+      phase3OpportunityTelemetryHandle = INVALID_HANDLE;
    }
 
    if(diagCsvHandle != INVALID_HANDLE)
@@ -2160,6 +2344,9 @@ bool AddShadowEvent(bool longSide, bool longValid, bool shortValid, const string
    shadowEvents[index].return12R = EMPTY_VALUE;
    shadowEvents[index].return24R = EMPTY_VALUE;
    shadowEvents[index].return48R = EMPTY_VALUE;
+
+   // Observer V81 chỉ đọc event audit đã tạo, không đọc/ghi execution state.
+   EmitPhase3OpportunityFromShadow(shadowEvents[index]);
 
    diagShadowEvents++;
    if(longSide)
@@ -3710,6 +3897,8 @@ bool AddBlockedSignalShadowEvent(bool longSide, string eventType, int setupGener
       diagBlockedSignalShadowControls++;
 
    blockedSignalShadowEvents[index] = event;
+   // Ghi raw opportunity ngay sau khi build xong, trước mọi outcome update.
+   EmitPhase3OpportunityFromBlocked(blockedSignalShadowEvents[index]);
    if(!buildValid)
       WriteBlockedSignalShadowEvent(index);
    return true;

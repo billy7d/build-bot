@@ -14,6 +14,9 @@ from ..features.registry import FEATURE_ALLOWLIST
 
 
 PHASE3_TELEMETRY_SCHEMA = "phase3-live-telemetry/1"
+PHASE3_OPPORTUNITY_SCHEMA = "phase3-opportunity-observation/1"
+PHASE3_CANONICAL_OPPORTUNITY_SCHEMA = "phase3-canonical-opportunity/1"
+PHASE3_CANONICALIZER_VERSION = "canonical-opportunity/1"
 PHASE3_BUNDLE_VERSION = "phase3-shadow-bundle/1"
 PHASE3_FEATURE_SNAPSHOT_VERSION = "phase3-feature-snapshot/1"
 PHASE3_OUTCOME_SCHEMA_VERSION = "phase3-outcome/1"
@@ -266,7 +269,10 @@ __all__ = [
     "HealthSnapshot",
     "OUTCOME_STATUSES",
     "PHASE3_BUNDLE_VERSION",
+    "PHASE3_CANONICAL_OPPORTUNITY_SCHEMA",
+    "PHASE3_CANONICALIZER_VERSION",
     "PHASE3_FEATURE_SNAPSHOT_VERSION",
+    "PHASE3_OPPORTUNITY_SCHEMA",
     "PHASE3_OUTCOME_SCHEMA_VERSION",
     "PHASE3_TELEMETRY_SCHEMA",
     "OutcomeResolution",

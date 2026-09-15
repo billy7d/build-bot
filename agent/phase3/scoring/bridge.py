@@ -17,7 +17,7 @@ from ...similarity.index import HistoricalSimilarityIndex
 from ...similarity.models import SimilarityConfig, SimilarityResult
 from ..bundle import BundleMismatchError, ShadowBundle, validate_bundle
 from ..ingestion.canonicalize import CanonicalForwardEvent, canonicalize_event
-from ..models import FeatureSnapshot, TelemetryEvent, utc_now
+from ..models import PHASE3_OPPORTUNITY_SCHEMA, FeatureSnapshot, TelemetryEvent, utc_now
 
 
 def build_scoring_row(event: TelemetryEvent | CanonicalForwardEvent) -> dict[str, Any]:
@@ -33,6 +33,10 @@ def build_scoring_row(event: TelemetryEvent | CanonicalForwardEvent) -> dict[str
         "side": telemetry.side,
         "features": telemetry.features,
     }
+    if telemetry.schema_version == PHASE3_OPPORTUNITY_SCHEMA:
+        # Opportunity source version là feature identity đã có trong Phase 2;
+        # metadata audit không được đưa thêm vào vector.
+        row["strategy_version"] = telemetry.source_strategy_version
     return row
 
 

@@ -207,7 +207,7 @@ class Phase3ContractTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             connection = connect_database(Path(directory) / "memory.db")
             apply_migrations(connection)
-            self.assertEqual(migration_versions(connection)[-1], "008")
+            self.assertEqual(migration_versions(connection)[-1], "009")
             tables = {
                 str(row[0])
                 for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'phase3_%'")
