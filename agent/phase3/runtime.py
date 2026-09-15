@@ -422,6 +422,43 @@ class Phase3Runtime:
             offset_bytes=int(offset["offset_bytes"]) if offset else 0,
             source_identity=str(offset["source_identity"]) if offset else None,
         )
+        if batch.truncated:
+            previous_state: dict[str, Any] = {}
+            if offset:
+                try:
+                    loaded_state = json.loads(str(offset["rotation_state_json"] or "{}"))
+                    if isinstance(loaded_state, Mapping):
+                        previous_state = dict(loaded_state)
+                except (TypeError, ValueError):
+                    previous_state = {}
+            previous_state.update({"truncated": True, "rotated": False})
+            with self.connection:
+                self.connection.execute(
+                    """
+                    UPDATE phase3_ingest_offsets
+                    SET rotation_state_json = ?, updated_at_utc = ?
+                    WHERE source_key = ?
+                    """,
+                    (_json(previous_state), self.clock(), source_key),
+                )
+                persist_health_event(
+                    self.connection,
+                    run_id,
+                    "SOURCE_TRUNCATED",
+                    {"source_path": batch.path, "offset_bytes": int(offset["offset_bytes"]) if offset else 0, "file_size": Path(path).stat().st_size},
+                    severity="ERROR",
+                )
+            return {
+                "source_path": batch.path,
+                "source_identity": batch.source_identity,
+                "records_seen": 0,
+                "results": [],
+                "partial_final_line": batch.partial_final_line,
+                "rotated": False,
+                "truncated": True,
+                "offset_bytes": int(offset["offset_bytes"]) if offset else 0,
+                "status": "SOURCE_TRUNCATED",
+            }
         results: list[dict[str, Any]] = []
         for parsed in records:
             if parsed.error is not None:
@@ -433,6 +470,15 @@ class Phase3Runtime:
             else:
                 result = self.process_payload(run_id, parsed.payload or {}, source=source or source_key)
             results.append(result)
+            rotation_state: dict[str, Any] = {}
+            if offset:
+                try:
+                    loaded_state = json.loads(str(offset["rotation_state_json"] or "{}"))
+                    if isinstance(loaded_state, Mapping):
+                        rotation_state = dict(loaded_state)
+                except (TypeError, ValueError):
+                    rotation_state = {}
+            rotation_state.update({"rotated": batch.rotated, "truncated": False})
             with self.connection:
                 self.connection.execute(
                     """
@@ -448,10 +494,19 @@ class Phase3Runtime:
                     """,
                     (
                         source_key, batch.source_identity, batch.path, parsed.record.end_offset,
-                        result.get("forward_event_id"), _json({"rotated": batch.rotated}), self.clock(),
+                        result.get("forward_event_id"), _json(rotation_state), self.clock(),
                     ),
                 )
         if not records:
+            rotation_state = {"rotated": batch.rotated, "truncated": False}
+            if offset:
+                try:
+                    loaded_state = json.loads(str(offset["rotation_state_json"] or "{}"))
+                    if isinstance(loaded_state, Mapping):
+                        rotation_state = dict(loaded_state)
+                except (TypeError, ValueError):
+                    rotation_state = {"rotated": batch.rotated, "truncated": False}
+            rotation_state.update({"rotated": batch.rotated, "truncated": False})
             with self.connection:
                 self.connection.execute(
                     """
@@ -459,7 +514,7 @@ class Phase3Runtime:
                     VALUES (?, ?, ?, ?, NULL, ?, ?)
                     ON CONFLICT(source_key) DO UPDATE SET source_identity=excluded.source_identity, source_path=excluded.source_path, offset_bytes=excluded.offset_bytes, rotation_state_json=excluded.rotation_state_json, updated_at_utc=excluded.updated_at_utc
                     """,
-                    (source_key, batch.source_identity, batch.path, batch.next_offset, _json({"rotated": batch.rotated}), self.clock()),
+                    (source_key, batch.source_identity, batch.path, batch.next_offset, _json(rotation_state), self.clock()),
                 )
         return {
             "source_path": batch.path,
@@ -468,6 +523,7 @@ class Phase3Runtime:
             "results": results,
             "partial_final_line": batch.partial_final_line,
             "rotated": batch.rotated,
+            "truncated": False,
             "offset_bytes": batch.next_offset,
         }
 

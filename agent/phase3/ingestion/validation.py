@@ -115,6 +115,23 @@ def validate_telemetry_payload(
     except ValueError as exc:
         raise TelemetryValidationError(str(exc), reason="INVALID_TIMESTAMP") from exc
 
+    emitted_at = _text(raw_payload, "emitted_at_utc")
+    if not emitted_at:
+        raise TelemetryValidationError("emitted_at_utc is required", reason="MISSING_EMITTED_TIMESTAMP")
+    try:
+        emitted_at = format_utc_timestamp(emitted_at)
+    except ValueError as exc:
+        raise TelemetryValidationError(str(exc), reason="INVALID_EMITTED_TIMESTAMP") from exc
+
+    source_strategy = _text(raw_payload, "source_strategy")
+    if not source_strategy:
+        raise TelemetryValidationError("source_strategy is required", reason="MISSING_SOURCE_STRATEGY")
+    source_strategy_version = _text(raw_payload, "source_strategy_version")
+    if not source_strategy_version:
+        raise TelemetryValidationError(
+            "source_strategy_version is required", reason="MISSING_SOURCE_STRATEGY_VERSION"
+        )
+
     received_value = received_at_utc or _text(raw_payload, "received_at_utc", "received_at") or utc_now()
     try:
         received_value = format_utc_timestamp(received_value)
@@ -166,6 +183,9 @@ def validate_telemetry_payload(
         source=str(source or _text(raw_payload, "source") or "telemetry"),
         received_at_utc=received_value,
         raw_payload=raw_payload,
+        emitted_at_utc=emitted_at,
+        source_strategy=source_strategy,
+        source_strategy_version=source_strategy_version,
         candidate_type=candidate_type,
         bar_state=bar_state,
         available_at_utc=available or None,

@@ -1,0 +1,55 @@
+name: trading-agent-phase3-forward-validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  phase3-forward-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile Python sources
+        run: python -m compileall -q agent
+
+      - name: Run Phase 1, Phase 2, Phase 3 and Phase 3.1 tests
+        run: python -m unittest discover -s agent/tests -v
+
+      - name: Validate migration and database integrity
+        run: >-
+          python -c "import tempfile; from pathlib import Path; from agent.memory.database import connect_database, integrity_status; p=Path(tempfile.mkdtemp())/'phase3-forward.sqlite'; c=connect_database(p); s=integrity_status(c); assert s['integrity_ok'] and s['foreign_key_ok'], s; c.close(); print(s)"
+
+      - name: Validate frozen Phase 3 bundle contract
+        run: >-
+          python -c "from pathlib import Path; from agent.phase3.bundle import validate_bundle; import json; p=Path('reports/trading_agent/phase3/shadow_bundle_manifest.json'); b=validate_bundle(json.loads(p.read_text(encoding='utf-8'))); assert b.bundle_id=='p3-bundle-577e5dfd0702c52c8f5318063703dd616a633704444ba5371e1c74e6dc080c6a'; assert b.historical_reference_cutoff_utc=='2023-12-30T08:00:00Z'; print(b.bundle_id)"
+
+      - name: Enforce one-way execution safety
+        shell: bash
+        run: |
+          for token in order_send order_modify order_cancel position_modify trade_request close_position open_position; do
+            if rg -n --glob '*.py' "$token" agent/phase3; then
+              echo "Forbidden execution token found: $token"
+              exit 1
+            fi
+          done
+          test "$(rg -n --glob '*.py' 'execution_mode' agent/phase3 | wc -l)" -ge 1
+          test "$(rg -n --glob '*.py' 'live_execution_enabled' agent/phase3 | wc -l)" -ge 1
+
+      - name: Validate MT5 telemetry exporter contract
+        run: >-
+          python -c "from pathlib import Path; p=Path('outputs/Mentor_RSI_MTF_v1.mq5'); s=p.read_text(encoding='utf-8'); required=('phase3-live-telemetry/1','FILE_COMMON','void EmitPhase3Telemetry','source_event_id','emitted_at_utc','bar_state','FileFlush(phase3TelemetryHandle)'); assert all(x in s for x in required), [x for x in required if x not in s]; print('MT5 exporter contract present')"
+
+      - name: Check PowerShell runtime scripts
+        run: >-
+          python -c "from pathlib import Path; p=Path('scripts/phase3'); expected={'install_forward_task.ps1','start_forward_task.ps1','stop_forward_task.ps1','status_forward_task.ps1','uninstall_forward_task.ps1','run_forward_collector.ps1'}; actual={x.name for x in p.glob('*.ps1')}; assert expected <= actual, sorted(expected-actual); text='\n'.join(x.read_text(encoding='utf-8') for x in p.glob('*.ps1')); assert 'BuildBot-Phase3-Forward' in text; assert '-Password' not in text; print(sorted(actual))"
+
+      - name: Check whitespace
+        run: git diff --check
