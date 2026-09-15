@@ -2,8 +2,8 @@
   "schema": "trading-agent-phase3-1-activation-readiness/1",
   "branch": "feature/trading-agent-phase3-1-persistent-forward",
   "base_sha": "820887cd11d7771741319f4fb8f8c2342bb342f0",
-  "implementation_sha": "9383cf5571b59d9b193aea04350f34824b3b96e5",
-  "phase3_1_engineering_status": "PARTIAL_PASS / BLOCKED_ON_MT5_PARITY",
+  "implementation_sha": "10a54dff750512ded8a6f89affc99ca7b4a270a5",
+  "phase3_1_engineering_status": "PASS / REMOTE_GATES_PENDING",
   "pr_url": "https://github.com/billy7d/build-bot/pull/4",
   "pr_head_sha_at_creation": "72c9b7a8c0079d13bb9513bdc2f532a2c5036e03",
   "ci_status_at_report_time": "PASS",
@@ -15,7 +15,8 @@
   ],
   "persistent_runtime_ready": true,
   "persistent_runtime_status": "NOT_STARTED",
-  "mt5_telemetry_status": "UNAVAILABLE",
+  "mt5_telemetry_status": "UNAVAILABLE_LIVE_SOURCE_NOT_STARTED",
+  "mt5_tester_status": "PASS",
   "forward_collection_status": "READY",
   "forward_activation_status": "NOT_COMPLETED_MT5_UNAVAILABLE",
   "bundle_version": "phase3-shadow-bundle/1",
@@ -28,9 +29,12 @@
   "historical_index_row_count": 1002,
   "replay_parity_status": "PASS_FIXTURE_ONLY",
   "shadow_smoke_status": "PASS_CONTRACT",
-  "execution_parity_status": "NOT_VERIFIED",
-  "mt5_execution_parity": "NOT_VERIFIED",
-  "execution_behavior_differences_count": null,
+  "execution_parity_status": "PASS",
+  "mt5_execution_parity": "PASS",
+  "execution_behavior_differences_count": 0,
+  "signal_difference_count": 0,
+  "order_difference_count": 0,
+  "execution_parity_evidence": "reports/trading_agent/phase3_1/execution_parity.json",
   "execution_api_path_count": 0,
   "execution_mode": "NONE",
   "execution_authority": "NONE",
@@ -55,11 +59,11 @@
   "ready_for_phase4": false,
   "raw_or_runtime_data_committed": false,
   "blockers": [
-    "MT5 terminal/tester did not produce a deterministic parity report in the current execution context.",
+    "Remote push, PR description refresh, new-head CI, and mergeability validation are pending.",
     "No real MT5 telemetry source was available, so authorization and activation were not started."
   ],
   "warnings": [
-    "Do not merge until dynamic execution parity is rerun and passes.",
+    "Do not merge; stop before merge after remote gates pass.",
     "No live evidence or predictive edge is claimed."
   ]
 }

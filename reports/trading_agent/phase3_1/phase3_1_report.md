@@ -20,8 +20,8 @@ runtime SQLite database.
 11. **Telemetry schema:** `phase3-live-telemetry/1`, append-only JSONL.
 12. **Telemetry physical path/source:** `FILE_COMMON`, expected at `C:\Users\billy\AppData\Roaming\MetaQuotes\Terminal\Common\Files\phase3\Mentor_RSI_MTF_<MagicNumber>_<Symbol>_<Timeframe>.jsonl`; the directory exists but no live Phase 3 source file was present.
 13. **MT5 compile result:** `PASS` — MetaEditor result `0 errors, 0 warnings` using the V82 runtime include.
-14. **Execution parity result:** `NOT_VERIFIED` (`NOT_RUN_INFRASTRUCTURE`) — the local MT5 tester did not produce a report in this execution context.
-15. **Execution behavior differences count:** `UNMEASURED` — no dynamic baseline/candidate comparison was produced; no PASS is claimed.
+14. **Execution parity result:** `PASS` — recovered portable MT5 tester completed deterministic baseline/candidate runs over identical inputs; report, order, deal, accepted-entry trace, and OnTester diagnostic comparisons matched.
+15. **Execution behavior differences count:** `0` — signal difference `0`, order difference `0`, deal difference `0`, and no first differing event.
 16. **Persistent runtime implementation:** `E:\build-bot\agent\phase3\forward.py`, CLI commands, durable offset/rotation state, OS lock, heartbeat, run marker, and six Windows Task Scheduler scripts.
 17. **Scheduled task name:** `BuildBot-Phase3-Forward`.
 18. **Task installed:** `NO`.
@@ -65,15 +65,17 @@ runtime SQLite database.
 49. **FORWARD_PREDICTIVE_EDGE_STATUS:** `INSUFFICIENT_DATA`.
 50. **READY_FOR_PHASE4:** `NO`.
 51. **Raw/runtime data committed?:** `NO` — only source, tests, scripts, workflow, and review reports are intended for Git; `data/` and runtime artifacts remain untracked.
-52. **Blockers/warnings:** MT5 terminal/tester could not produce a deterministic parity report in the current execution context (`terminal64.exe` exited `-1000012355`; portable/direct tester attempts produced no report). Per PRD §70, do not merge or claim activation until dynamic execution parity is rerun and passes. No live telemetry, authorization, task installation, or forward run was fabricated.
+52. **Blockers/warnings:** The original `-1000012355` was recovered as an environment/configuration/data/deployment issue; deterministic tester parity now passes. Remote push, PR description refresh, new-head CI, and mergeability still require final validation. No live telemetry, authorization, task installation, or forward run was fabricated.
 
 ## Safe incomplete activation state
 
 ```text
-PHASE3_1_ENGINEERING_STATUS: PARTIAL_PASS / BLOCKED_ON_MT5_PARITY
+PHASE3_1_ENGINEERING_STATUS: PASS (MT5 parity passed; remote gates pending)
 PERSISTENT_RUNTIME_READY: YES
-MT5_TELEMETRY_STATUS: UNAVAILABLE
-MT5_EXECUTION_PARITY: NOT_VERIFIED
+MT5_TESTER_STATUS: PASS
+MT5_TELEMETRY_STATUS: UNAVAILABLE (live source intentionally not started)
+MT5_EXECUTION_PARITY: PASS
+EXECUTION_BEHAVIOR_DIFFERENCE_COUNT: 0
 PYTHON_TESTS: 52/52 PASS
 MQL5_COMPILE: PASS
 EXECUTION_API_PATH_COUNT: 0
@@ -81,5 +83,5 @@ FORWARD_COLLECTION_STATUS: READY
 PERSISTENT_RUNTIME_NOT_STARTED: YES
 LIVE_EXECUTION_ENABLED: NO
 EXECUTION_AUTHORITY: NONE
-MERGE_READY: NO
+MERGE_READY: NO (pending push, PR refresh, new-head CI, and mergeability)
 ```
