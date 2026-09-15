@@ -8,9 +8,9 @@ runtime SQLite database.
 
 1. **Phase 3.1 branch:** `feature/trading-agent-phase3-1-persistent-forward`
 2. **Base SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0`
-3. **Head SHA:** `9383cf5571b59d9b193aea04350f34824b3b96e5` (implementation commit; report/docs commit may advance the branch)
-4. **PR URL:** Pending push/PR creation.
-5. **CI results:** Pending push; local equivalent is Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, `git diff --check` PASS.
+3. **Head SHA at PR creation:** `72c9b7a8c0079d13bb9513bdc2f532a2c5036e03` (the report update is a later docs commit on the same PR)
+4. **PR URL:** `https://github.com/billy7d/build-bot/pull/4`.
+5. **CI results:** GitHub workflow had not started at report time; local equivalent is Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, `git diff --check` PASS. Merge remains blocked until remote CI is observed as PASS.
 6. **Merge SHA:** `N/A` — MT5 execution parity was not available, so the PRD §70 merge gate is not satisfied.
 7. **Final main SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0` (main was not advanced).
 
@@ -20,7 +20,7 @@ runtime SQLite database.
 11. **Telemetry schema:** `phase3-live-telemetry/1`, append-only JSONL.
 12. **Telemetry physical path/source:** `FILE_COMMON`, expected at `C:\Users\billy\AppData\Roaming\MetaQuotes\Terminal\Common\Files\phase3\Mentor_RSI_MTF_<MagicNumber>_<Symbol>_<Timeframe>.jsonl`; the directory exists but no live Phase 3 source file was present.
 13. **MT5 compile result:** `PASS` — MetaEditor result `0 errors, 0 warnings` using the V82 runtime include.
-14. **Execution parity result:** `NOT_RUN_INFRASTRUCTURE` — the local MT5 tester did not produce a report in this execution context.
+14. **Execution parity result:** `NOT_VERIFIED` (`NOT_RUN_INFRASTRUCTURE`) — the local MT5 tester did not produce a report in this execution context.
 15. **Execution behavior differences count:** `UNMEASURED` — no dynamic baseline/candidate comparison was produced; no PASS is claimed.
 16. **Persistent runtime implementation:** `E:\build-bot\agent\phase3\forward.py`, CLI commands, durable offset/rotation state, OS lock, heartbeat, run marker, and six Windows Task Scheduler scripts.
 17. **Scheduled task name:** `BuildBot-Phase3-Forward`.
@@ -70,11 +70,16 @@ runtime SQLite database.
 ## Safe incomplete activation state
 
 ```text
-PHASE3_1_ENGINEERING_STATUS: PASS
+PHASE3_1_ENGINEERING_STATUS: PARTIAL_PASS / BLOCKED_ON_MT5_PARITY
 PERSISTENT_RUNTIME_READY: YES
 MT5_TELEMETRY_STATUS: UNAVAILABLE
+MT5_EXECUTION_PARITY: NOT_VERIFIED
+PYTHON_TESTS: 52/52 PASS
+MQL5_COMPILE: PASS
+EXECUTION_API_PATH_COUNT: 0
 FORWARD_COLLECTION_STATUS: READY
 PERSISTENT_RUNTIME_NOT_STARTED: YES
 LIVE_EXECUTION_ENABLED: NO
 EXECUTION_AUTHORITY: NONE
+MERGE_READY: NO
 ```
