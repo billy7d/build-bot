@@ -32,16 +32,8 @@ jobs:
           python -c "from pathlib import Path; from agent.phase3.bundle import validate_bundle; import json; p=Path('reports/trading_agent/phase3/shadow_bundle_manifest.json'); b=validate_bundle(json.loads(p.read_text(encoding='utf-8'))); assert b.bundle_id=='p3-bundle-577e5dfd0702c52c8f5318063703dd616a633704444ba5371e1c74e6dc080c6a'; assert b.historical_reference_cutoff_utc=='2023-12-30T08:00:00Z'; print(b.bundle_id)"
 
       - name: Enforce one-way execution safety
-        shell: bash
-        run: |
-          for token in order_send order_modify order_cancel position_modify trade_request close_position open_position; do
-            if rg -n --glob '*.py' "$token" agent/phase3; then
-              echo "Forbidden execution token found: $token"
-              exit 1
-            fi
-          done
-          test "$(rg -n --glob '*.py' 'execution_mode' agent/phase3 | wc -l)" -ge 1
-          test "$(rg -n --glob '*.py' 'live_execution_enabled' agent/phase3 | wc -l)" -ge 1
+        run: >-
+          python -c "from pathlib import Path; source=''.join(p.read_text(encoding='utf-8') for p in Path('agent/phase3').rglob('*.py')); forbidden=('order_send','order_modify','order_cancel','position_modify','trade_request','close_position','open_position'); assert not any(token in source for token in forbidden); assert 'execution_mode' in source; assert 'live_execution_enabled' in source; print('one-way execution safety passed')"
 
       - name: Validate MT5 telemetry exporter contract
         run: >-
