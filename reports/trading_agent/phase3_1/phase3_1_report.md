@@ -10,7 +10,7 @@ runtime SQLite database.
 2. **Base SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0`
 3. **Head SHA at PR creation:** `72c9b7a8c0079d13bb9513bdc2f532a2c5036e03` (the report update is a later docs commit on the same PR)
 4. **PR URL:** `https://github.com/billy7d/build-bot/pull/4`.
-5. **CI results:** GitHub workflow had not started at report time; local equivalent is Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, `git diff --check` PASS. Merge remains blocked until remote CI is observed as PASS.
+5. **CI results:** `PASS` on validated PR head `1402b5f231015a906fe612e84520550443210aaf`: [Phase 3.1 forward validation](https://github.com/billy7d/build-bot/actions/runs/34959012073), [Phase 3 validation](https://github.com/billy7d/build-bot/actions/runs/34959011958), and [Phase 2 validation](https://github.com/billy7d/build-bot/actions/runs/34959011899). Local Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, and `git diff --check` PASS. The report commit may advance the branch; merge remains blocked by MT5 parity.
 6. **Merge SHA:** `N/A` — MT5 execution parity was not available, so the PRD §70 merge gate is not satisfied.
 7. **Final main SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0` (main was not advanced).
 

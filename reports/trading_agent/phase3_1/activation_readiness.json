@@ -6,7 +6,13 @@
   "phase3_1_engineering_status": "PARTIAL_PASS / BLOCKED_ON_MT5_PARITY",
   "pr_url": "https://github.com/billy7d/build-bot/pull/4",
   "pr_head_sha_at_creation": "72c9b7a8c0079d13bb9513bdc2f532a2c5036e03",
-  "ci_status_at_report_time": "NOT_STARTED_ON_GITHUB",
+  "ci_status_at_report_time": "PASS",
+  "ci_validated_sha": "1402b5f231015a906fe612e84520550443210aaf",
+  "ci_run_urls": [
+    "https://github.com/billy7d/build-bot/actions/runs/34959012073",
+    "https://github.com/billy7d/build-bot/actions/runs/34959011958",
+    "https://github.com/billy7d/build-bot/actions/runs/34959011899"
+  ],
   "persistent_runtime_ready": true,
   "persistent_runtime_status": "NOT_STARTED",
   "mt5_telemetry_status": "UNAVAILABLE",
