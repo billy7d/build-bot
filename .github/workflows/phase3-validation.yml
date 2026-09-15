@@ -24,7 +24,7 @@ jobs:
       - name: Check migrations and SQLite integrity
         run: >-
           python -X utf8 -c
-          "import tempfile; from pathlib import Path; from agent.memory.database import connect_database, apply_migrations, integrity_status, migration_versions; p=Path(tempfile.mkdtemp())/'memory.db'; c=connect_database(p); apply_migrations(c); assert migration_versions(c)[-1]=='008'; assert integrity_status(c)['integrity_ok']; assert integrity_status(c)['foreign_key_ok']; c.close()"
+          "import tempfile; from pathlib import Path; from agent.memory.database import connect_database, apply_migrations, integrity_status, migration_versions; p=Path(tempfile.mkdtemp())/'memory.db'; c=connect_database(p); apply_migrations(c); assert migration_versions(c)[-1]=='009'; assert integrity_status(c)['integrity_ok']; assert integrity_status(c)['foreign_key_ok']; c.close()"
       - name: Validate frozen bundle and report contract
         run: >-
           python -X utf8 -c

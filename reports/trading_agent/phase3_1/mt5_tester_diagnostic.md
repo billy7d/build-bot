@@ -1,89 +1,83 @@
-# MT5 tester diagnostic and recovery
+# MT5 Tester Diagnostic — Phase 3.1 Canonical Telemetry
 
-## Status
+## Result
+
+- `MT5_TESTER_STATUS`: `UNAVAILABLE_TERMINAL_NOT_SYNCHRONIZED`
+- `MT5_EXECUTION_PARITY`: `NOT_VERIFIED`
+- `MERGE_READY`: `NO`
+- `LIVE_EXECUTION_ENABLED`: `NO`
+- `FORWARD_COLLECTION_STATUS`: `READY`
+
+The tester sanity run was attempted twice and the original-vs-telemetry parity run
+was not started after both attempts failed to synchronize. The updated EA did
+compile into a new tester-visible EX5, so the remaining failure is the terminal
+session/data synchronization gate rather than an MQL compile failure.
+
+## Environment observed
+
+| Item | Observed value |
+|---|---|
+| Tester terminal | `E:\build-bot\outputs\build\mt5-latest\terminal64.exe` |
+| Terminal build | `5.0.0.6182` |
+| MetaEditor | `D:\MetaTrader5\metaeditor64.exe` |
+| MetaEditor build | `5.0.0.6182` |
+| Source | `outputs/Mentor_RSI_MTF_v1.mq5` |
+| Include root used | `outputs/build/mt5-v82-runtime/MQL5/Include` |
+| Candidate EX5 | `outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalCandidate.ex5` |
+| Candidate EX5 result | 303,546 bytes, produced 2026-09-15 11:52:02 +07:00 |
+| Baseline EX5 | `outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalBaseline.ex5` |
+| Baseline EX5 result | 277,194 bytes, produced 2026-09-15 11:55:18 +07:00 |
+
+The tester runtime is the repository-provisioned portable installation, while the
+MetaEditor executable is the installed build `6182`. The compatible V82 Include tree
+was selected by verifying that it declares both `CTrade::PositionClosePartial`
+overloads used by the unchanged baseline source.
+
+## Compile evidence
+
+Compile command:
 
 ```text
-MT5_TESTER_STATUS: PASS
-MT5_EXECUTION_PARITY: PASS
-EXECUTION_BEHAVIOR_DIFFERENCE_COUNT: 0
+metaeditor64.exe /compile:outputs/Mentor_RSI_MTF_v1.mq5 /log:outputs/build/phase3-canonical-compile-v82.log /inc:outputs/build/mt5-v82-runtime/MQL5
 ```
 
-## Installation and runtime audit
+The selected include tree compiled both main-base and candidate sources with:
 
-Two installed MetaTrader 5 binaries were identified, both build `5.0.0.6182`:
+`Result: 0 errors, 0 warnings`
 
-- `C:\Program Files\MetaTrader 5\terminal64.exe`
-- `D:\MetaTrader5\terminal64.exe`
+The earlier failed attempt with `outputs/build/mt5-latest/MQL5/Include` was an
+incomplete-library mismatch; it was not used for the tester artifacts.
 
-The intended tester was selected explicitly as the portable build under
-`E:\build-bot\outputs\build\mt5-latest`, because its terminal, MetaEditor,
-MetaTester, `Bases`, `MQL5`, `Tester`, and report directories are co-located.
-The terminal log confirms that exact portable root. Its tester-visible paths are:
+## Tester evidence
 
-- Terminal: `E:\build-bot\outputs\build\mt5-latest\terminal64.exe`
-- MetaEditor: `E:\build-bot\outputs\build\mt5-latest\MetaEditor64.exe`
-- MetaTester: `E:\build-bot\outputs\build\mt5-latest\metatester64.exe`
-- Data/runtime root: `E:\build-bot\outputs\build\mt5-latest`
-- Experts: `E:\build-bot\outputs\build\mt5-latest\MQL5\Experts\Advisors`
-- Tester logs: `E:\build-bot\outputs\build\mt5-latest\Tester\logs`
-- Agent logs: `E:\build-bot\outputs\build\mt5-latest\Tester\Agent-127.0.0.1-3000\logs`
-- Reports: `E:\build-bot\outputs\build\mt5-latest\reports\codex`
-
-The runtime contains `BTCUSD` history/ticks for April–December 2023. The
-January–March tick files required by the old January-starting window were not
-present. The exact symbol `BTCUSD` was present and synchronized on
-`Exness-MT5Real15`; no alias such as `XAUUSD.a` was substituted.
-
-## Evidence for `-1000012355`
-
-The failed startup at `17:08` initialized the old baseline config, then logged:
+The sanity config used `BTCUSD`, `H1`, model `4`, `2023.04.01` through `2023.04.07`,
+deposit `5000 USD`, leverage `1:10`, `ExecutionMode=0`, no optimization, no forward
+mode, `UseLocal=1`, and `ShutdownTerminal=1`. Two attempts produced no report. The
+portable log recorded:
 
 ```text
 Network '103455393': no connection to Exness-MT5Real15
-MQL5.community authorization failed
-Tester not synchronized with trade server
-terminal is not synchronized with the trade server before start automatic testing [1]
-automatic testing started
+MQL5.community: authorization failed
+Tester: not synchronized with trade server
+Tester: terminal is not synchronized with the trade server before start automatic testing [1]
+Tester: automatic testing started
 ```
 
-No tester completion, non-empty report, or successful run marker followed that
-attempt. This is classified as an environment/configuration/data/deployment
-failure, not as a strategy-logic failure:
+Therefore the following values remain unset by design:
 
-```text
-ENVIRONMENT_ERROR
-TESTER_CONFIG_ERROR
-SYMBOL_DATA_ERROR
-EX5_PATH_ERROR
-```
+- tester sanity result
+- baseline tester result
+- candidate tester result
+- signal difference count
+- order difference count
+- execution behavior difference count
 
-The report directory itself was writable once the tester was synchronized; the
-recovered runs created non-empty reports and exited with terminal code `0`.
+No tester report was fabricated, and no FORWARD run, authorization, scheduler task,
+or live activation was created.
 
-## Recovery actions
+## Exact next environment requirement
 
-The following deployment-only corrections were made in the portable runtime:
-
-1. Compiled the exact base source into the baseline artifact and deployed it as
-   `MQL5\Experts\Advisors\Phase31Baseline.ex5`.
-2. Deployed the current branch artifact as
-   `MQL5\Experts\Advisors\Phase31Telemetry.ex5`.
-3. Copied the existing `79_v26_forward_demo.set` to the tester-visible
-   `MQL5\Profiles\Tester` directory.
-4. Used `BTCUSD`, `H1`, model `4`, and the deterministic cached range
-   `2023.04.01`–`2023.12.31` for both participants.
-5. Wrote reports to the local writable `reports\codex` directory with
-   `ReplaceReport=1` and `ShutdownTerminal=1`.
-
-No trading source, model, bundle, cutoff, similarity/history, V26/V63, risk,
-lot, SL/TP, gate, forward authorization, or activation code was changed.
-
-## Run evidence
-
-The minimal sanity run produced a `73558`-byte report, `522706` real ticks,
-`144` bars, and `6` trades. The official baseline report is `304298` bytes and
-the candidate report is `304622` bytes. Both report and tester logs contain
-`Test passed`, `OnTester result 0`, and terminal shutdown code `0`.
-
-Raw reports and logs stay outside Git. The sanitized paths, hashes, configs,
-and comparison counts are in `execution_parity.json`.
+Restore terminal synchronization/authorization for `Exness-MT5Real15` in the
+portable tester session (or provide an equivalent verified local history session),
+then rerun the sanity test followed by V26 and V63 baseline-versus-candidate tests
+with the exact configs. No trading code change is required by this diagnosis.
