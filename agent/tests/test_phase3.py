@@ -167,6 +167,10 @@ def _payload(source_event_id: str = "live-1", *, timestamp: str = "2024-01-01T00
         "schema_version": "phase3-live-telemetry/1",
         "source_event_id": source_event_id,
         "event_timestamp": timestamp,
+        "event_timestamp_utc": timestamp,
+        "emitted_at_utc": timestamp,
+        "source_strategy": "fixture-strategy",
+        "source_strategy_version": "fixture/1",
         "symbol": "BTCUSD",
         "timeframe": "H1",
         "side": side,
@@ -322,6 +326,7 @@ class Phase3ContractTests(unittest.TestCase):
             missing_id.pop("source_event_id")
             missing_timestamp = _payload("missing-timestamp")
             missing_timestamp.pop("event_timestamp")
+            missing_timestamp.pop("event_timestamp_utc")
             self.assertEqual(runtime.process_payload("run-invalid", unknown_schema)["status"], "REJECTED_SCHEMA")
             self.assertEqual(runtime.process_payload("run-invalid", missing_id)["status"], "REJECTED_SCHEMA")
             self.assertEqual(runtime.process_payload("run-invalid", missing_timestamp)["status"], "REJECTED_SCHEMA")

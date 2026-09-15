@@ -114,6 +114,9 @@ class TelemetryEvent:
     source: str
     received_at_utc: str
     raw_payload: Mapping[str, Any]
+    emitted_at_utc: str
+    source_strategy: str
+    source_strategy_version: str
     candidate_type: str = "UNKNOWN"
     bar_state: str = "closed_bar"
     available_at_utc: str | None = None
@@ -139,6 +142,9 @@ class TelemetryEvent:
             "context": dict(self.context),
             "source": self.source,
             "received_at_utc": self.received_at_utc,
+            "emitted_at_utc": self.emitted_at_utc,
+            "source_strategy": self.source_strategy,
+            "source_strategy_version": self.source_strategy_version,
             "candidate_type": self.candidate_type,
             "bar_state": self.bar_state,
             "available_at_utc": self.available_at_utc,

@@ -24,6 +24,7 @@ class FileTailBatch:
     records: tuple[FileTailRecord, ...]
     partial_final_line: bool
     rotated: bool
+    truncated: bool = False
 
 
 def file_source_identity(path: str | Path) -> str:
@@ -55,6 +56,9 @@ class TelemetryFileTailer:
         file_size = self.path.stat().st_size
         identity = file_source_identity(self.path)
         rotated = bool(source_identity and source_identity != identity)
+        # Cùng identity nhưng kích thước giảm nghĩa là writer đã truncate
+        # stream; không được âm thầm đọc lại từ byte 0 như một lần append.
+        truncated = bool(source_identity and source_identity == identity and offset_bytes > file_size)
         start = 0 if rotated or offset_bytes > file_size else offset_bytes
         with self.path.open("rb") as stream:
             stream.seek(start)
@@ -78,6 +82,7 @@ class TelemetryFileTailer:
             records=tuple(records),
             partial_final_line=partial,
             rotated=rotated,
+            truncated=truncated,
         )
 
 

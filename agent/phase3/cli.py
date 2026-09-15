@@ -16,6 +16,18 @@ from .bundle import freeze_bundle, validate_bundle, write_bundle_manifest
 from .config import Phase3Config
 from .evaluation.metrics import evaluate_forward_records
 from .evaluation.reporting import write_phase3_reports
+from .forward import (
+    ForwardControlError,
+    PersistentForwardCollector,
+    create_forward_run,
+    build_historical_index_artifact,
+    current_git_sha,
+    load_forward_config,
+    prepare_forward_authorization,
+    read_runtime_status,
+    request_stop_forward,
+    validate_forward_authorization,
+)
 from .runtime import Phase3Runtime
 
 
@@ -35,6 +47,8 @@ def _common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--telemetry", type=Path, default=argparse.SUPPRESS, help="JSONL/NDJSON/CSV telemetry file")
     parser.add_argument("--format", dest="file_format", default=argparse.SUPPRESS, choices=("jsonl", "ndjson", "csv"))
     parser.add_argument("--source", default=argparse.SUPPRESS, help="telemetry source label")
+    parser.add_argument("--runtime-config", type=Path, default=argparse.SUPPRESS, help="local persistent runtime config")
+    parser.add_argument("--authorization", type=Path, default=argparse.SUPPRESS, help="local FORWARD authorization manifest")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -88,6 +102,31 @@ def build_parser() -> argparse.ArgumentParser:
     _common_arguments(report)
     report.add_argument("--parity-report", type=Path, default=None)
     report.add_argument("--forward-validation", type=Path, default=None)
+
+    build_index = commands.add_parser("build-history-index", help="build the frozen-cutoff similarity index outside the repository")
+    _common_arguments(build_index)
+    build_index.add_argument("--source-db", type=Path, required=True, help="read-only canonical Phase 1 SQLite source")
+    build_index.add_argument("--output", type=Path, required=True, help="runtime index artifact output")
+
+    prepare = commands.add_parser("prepare-forward", help="validate gates and write local FORWARD authorization")
+    _common_arguments(prepare)
+    prepare.add_argument("--gates", type=Path, required=True, help="JSON gate evidence with PASS statuses")
+    prepare.add_argument("--output", type=Path, default=None)
+
+    start = commands.add_parser("start-forward", help="start an explicitly authorized persistent FORWARD collector")
+    _common_arguments(start)
+    start.add_argument("--max-iterations", type=int, default=None)
+
+    resume = commands.add_parser("resume-forward", help="resume the same authorized FORWARD run after restart")
+    _common_arguments(resume)
+    resume.add_argument("--max-iterations", type=int, default=None)
+
+    stop = commands.add_parser("stop-forward", help="request a collector-only stop")
+    _common_arguments(stop)
+
+    runtime_status = commands.add_parser("status-runtime", help="show persistent collector machine status")
+    _common_arguments(runtime_status)
+    runtime_status.add_argument("--json", action="store_true", help="emit JSON output")
 
     return parser
 
@@ -342,6 +381,93 @@ def _command_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _runtime_config(args: argparse.Namespace) -> Any:
+    if not getattr(args, "runtime_config", None):
+        raise SystemExit("command requires --runtime-config")
+    try:
+        return load_forward_config(Path(args.runtime_config))
+    except ForwardControlError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def _command_build_history_index(args: argparse.Namespace) -> int:
+    root = Path(args.root).resolve()
+    bundle = _load_bundle(_path(root, args.bundle))
+    try:
+        result = build_historical_index_artifact(_path(root, args.source_db), _path(root, args.output), bundle)
+    except ForwardControlError as exc:
+        raise SystemExit(str(exc)) from exc
+    _print(result)
+    return 0
+
+
+def _command_prepare_forward(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    gates = _load_mapping(Path(args.gates))
+    try:
+        authorization = prepare_forward_authorization(config, gates=gates, output=args.output)
+    except ForwardControlError as exc:
+        raise SystemExit(f"FORWARD authorization refused: {exc}") from exc
+    _print({"status": "FORWARD_AUTHORIZATION_READY", **authorization.to_dict()})
+    return 0
+
+
+def _forward_collector(args: argparse.Namespace, *, resume: bool) -> int:
+    config = _runtime_config(args)
+    authorization_path = Path(args.authorization) if args.authorization else config.authorization_path
+    try:
+        authorization, bundle, model, index = validate_forward_authorization(
+            authorization_path,
+            config,
+            check_source_identity=not resume,
+        )
+        if not resume and not config.telemetry.is_file():
+            raise ForwardControlError("telemetry source is unavailable; start-forward refuses waiting activation")
+        if resume:
+            if not args.run_id:
+                raise ForwardControlError("resume-forward requires --run-id")
+            run_id = str(args.run_id)
+        else:
+            short_sha = current_git_sha(config.repo_path)[:12]
+            run_id = str(args.run_id or f"P3-FWD-{datetime_now_token()}-{short_sha}")
+            create_forward_run(config, authorization, bundle, run_id=run_id)
+        collector = PersistentForwardCollector(
+            config,
+            authorization,
+            bundle,
+            model,
+            index,
+            run_id=run_id,
+        )
+        result = collector.run_forever(max_iterations=args.max_iterations)
+    except ForwardControlError as exc:
+        raise SystemExit(f"FORWARD start refused: {exc}") from exc
+    _print({"status": "FORWARD_COLLECTOR_FINISHED", "run_id": run_id, **result})
+    return 0
+
+
+def datetime_now_token() -> str:
+    """Tạo token UTC dễ đọc cho run ID, không dùng làm event identity."""
+
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _command_stop_forward(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    if not args.run_id:
+        raise SystemExit("stop-forward requires --run-id")
+    _print(request_stop_forward(config, run_id=str(args.run_id)))
+    return 0
+
+
+def _command_status_runtime(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    _print(read_runtime_status(config, run_id=args.run_id))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -353,6 +479,12 @@ def main(argv: list[str] | None = None) -> int:
         "resolve-outcomes": _command_outcomes,
         "evaluate": _command_evaluate,
         "report": _command_report,
+        "build-history-index": _command_build_history_index,
+        "prepare-forward": _command_prepare_forward,
+        "start-forward": lambda value: _forward_collector(value, resume=False),
+        "resume-forward": lambda value: _forward_collector(value, resume=True),
+        "stop-forward": _command_stop_forward,
+        "status-runtime": _command_status_runtime,
     }
     return int(commands[args.command](args))
 

@@ -291,6 +291,8 @@ input int DiagnosticsEveryBars = 12;
 input bool ExportDiagnosticsCsv = false;
 // Observation-only forward telemetry. It must never participate in signal, sizing, or exit decisions.
 input bool ExportForwardTelemetryCsv = false;
+// Side-channel JSONL cho Phase 3; không tham gia bất kỳ quyết định giao dịch nào.
+input bool ExportPhase3TelemetryJsonl = true;
 input int ForwardHeartbeatBars = 24;
 
 enum BiasState
@@ -782,6 +784,7 @@ int blockedSignalShadowCsvHandle = INVALID_HANDLE;
 int pyramidShadowCsvHandle = INVALID_HANDLE;
 int coreExitShadowCsvHandle = INVALID_HANDLE;
 int forwardCsvHandle = INVALID_HANDLE;
+int phase3TelemetryHandle = INVALID_HANDLE;
 double forwardPeakEquity = 0.0;
 bool forwardConnectionKnown = false;
 bool forwardLastConnected = false;
@@ -935,6 +938,177 @@ void WriteForwardEvent(string eventName, string side, double volume,
              stopLoss, riskDistance, desiredRiskMoney, actualRiskMoney, actualRiskPct,
              retcode, detail);
    FileFlush(forwardCsvHandle);
+}
+
+string Phase3TimeframeCode(ENUM_TIMEFRAMES tf)
+{
+   if(tf == PERIOD_M15)
+      return "M15";
+   if(tf == PERIOD_H1)
+      return "H1";
+   if(tf == PERIOD_H4)
+      return "H4";
+   if(tf == PERIOD_D1)
+      return "D1";
+   return TFName(tf);
+}
+
+string Phase3StrategyVersion()
+{
+   // Chỉ map hai magic number đã được đăng ký trong hai preset forward.
+   if(MagicNumber == 26072626)
+      return "V26";
+   if(MagicNumber == 26072663)
+      return "V63";
+   return "UNKNOWN";
+}
+
+string Phase3JsonEscape(const string &value)
+{
+   string escaped = value;
+   StringReplace(escaped, "\\", "\\\\");
+   StringReplace(escaped, "\"", "\\\"");
+   StringReplace(escaped, "\r", "\\r");
+   StringReplace(escaped, "\n", "\\n");
+   return escaped;
+}
+
+string Phase3JsonString(string value)
+{
+   return "\"" + Phase3JsonEscape(value) + "\"";
+}
+
+string Phase3JsonNumber(double value)
+{
+   if(value == EMPTY_VALUE || !MathIsValidNumber(value))
+      return "null";
+   return DoubleToString(value, 10);
+}
+
+string Phase3TelemetryFileName()
+{
+   return "phase3/Mentor_RSI_MTF_" + IntegerToString(MagicNumber) + "_" +
+          _Symbol + "_" + Phase3TimeframeCode(EntryTF) + ".jsonl";
+}
+
+datetime Phase3ServerTimeToUtc(datetime serverTime)
+{
+   datetime serverNow = TimeTradeServer();
+   datetime gmtNow = TimeGMT();
+   if(serverNow <= 0 || gmtNow <= 0)
+      serverNow = TimeCurrent();
+   if(serverNow <= 0 || gmtNow <= 0)
+      return serverTime;
+   return serverTime - (serverNow - gmtNow);
+}
+
+void OpenPhase3Telemetry()
+{
+   if(!ExportPhase3TelemetryJsonl || (bool)MQLInfoInteger(MQL_TESTER))
+      return;
+
+   FolderCreate("phase3", FILE_COMMON);
+   int flags = FILE_READ | FILE_WRITE | FILE_TXT | FILE_ANSI |
+               FILE_COMMON | FILE_SHARE_READ | FILE_SHARE_WRITE;
+   phase3TelemetryHandle = FileOpen(Phase3TelemetryFileName(), flags);
+   if(phase3TelemetryHandle == INVALID_HANDLE)
+   {
+      // Exporter mới là side-channel; lỗi mở file không được chặn strategy.
+      Print("PHASE3 telemetry exporter unavailable; strategy continues without opportunity JSONL.");
+      return;
+   }
+
+   FileSeek(phase3TelemetryHandle, 0, SEEK_END);
+   Print("PHASE3 telemetry exporter initialized schema=phase3-live-telemetry/1 path=",
+         TerminalInfoString(TERMINAL_COMMONDATA_PATH), "\\Files\\", Phase3TelemetryFileName());
+}
+
+void EmitPhase3Telemetry(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1,
+                         const TFState &h4, const TFState &h1, double entryPrice,
+                         double riskDistance, double entrySpreadR)
+{
+   if(phase3TelemetryHandle == INVALID_HANDLE)
+      return;
+
+   datetime eventTime = lastEntryBarTime;
+   datetime eventTimeUtc = Phase3ServerTimeToUtc(eventTime);
+   if(eventTime <= 0 || eventTimeUtc <= 0 || entryPrice <= 0.0 || riskDistance <= _Point)
+      return;
+
+   string side = (type == ORDER_TYPE_BUY) ? "LONG" : "SHORT";
+   string strategyVersion = Phase3StrategyVersion();
+   string sourceEventId = "MRSI:" + strategyVersion + ":" + _Symbol + ":" +
+                          Phase3TimeframeCode(entry.tf) + ":" + IntegerToString(eventTimeUtc) +
+                          ":" + side + ":EXECUTION_CANDIDATE";
+
+   StandardDeviationAuditFeatures stdFeatures;
+   ResetStandardDeviationFeatures(stdFeatures);
+   BuildStandardDeviationFeatures(entry.tf, stdFeatures);
+
+   double atrPercent = EMPTY_VALUE;
+   double entryATRRank = ATRRankPercent(entry.tf, MarketStateATRRankBars);
+   double entryEfficiency20 = PriceEfficiencyRatio(entry.tf, MarketStateEfficiencyBars);
+   double initialSLATR = EMPTY_VALUE;
+   if(entry.atr1 > 0.0 && entryPrice > 0.0)
+   {
+      atrPercent = entry.atr1 / entryPrice * 100.0;
+      initialSLATR = riskDistance / entry.atr1;
+   }
+
+   string eventTimestamp = TimeToString(eventTimeUtc, TIME_DATE | TIME_SECONDS) + "Z";
+   string emittedTimestamp = TimeToString(TimeGMT(), TIME_DATE | TIME_SECONDS) + "Z";
+   string payload = "{" +
+      "\"schema_version\":\"phase3-live-telemetry/1\"," +
+      "\"source_event_id\":" + Phase3JsonString(sourceEventId) + "," +
+      "\"event_timestamp_utc\":" + Phase3JsonString(eventTimestamp) + "," +
+      "\"emitted_at_utc\":" + Phase3JsonString(emittedTimestamp) + "," +
+      "\"source_strategy\":\"Mentor_RSI_MTF\"," +
+      "\"source_strategy_version\":" + Phase3JsonString(strategyVersion) + "," +
+      "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+      "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(entry.tf)) + "," +
+      "\"side\":" + Phase3JsonString(side) + "," +
+      "\"candidate_type\":\"EXECUTION_CANDIDATE\"," +
+      "\"bar_state\":\"closed_bar\"," +
+      "\"source_timezone\":\"BROKER_SERVER\"," +
+      "\"context\":{" +
+         "\"features\":{" +
+            "\"rsi\":" + Phase3JsonNumber(entry.rsi1) + "," +
+            "\"atr_percent\":" + Phase3JsonNumber(atrPercent) + "," +
+            "\"spread_r\":" + Phase3JsonNumber(entrySpreadR) + "," +
+            "\"return_std_20\":" + Phase3JsonNumber(stdFeatures.returnStd20) + "," +
+            "\"return_std_rank\":" + Phase3JsonNumber(stdFeatures.returnStdRank) + "," +
+            "\"price_std_20\":" + Phase3JsonNumber(stdFeatures.priceStd20) + "," +
+            "\"price_std_100\":" + Phase3JsonNumber(stdFeatures.priceStd100) + "," +
+            "\"price_std_pct_20\":" + Phase3JsonNumber(stdFeatures.priceStdPct20) + "," +
+            "\"std_ratio_20_100\":" + Phase3JsonNumber(stdFeatures.stdRatio20_100) + "," +
+            "\"price_z20\":" + Phase3JsonNumber(stdFeatures.priceZ20) + "," +
+            "\"price_abs_z20\":" + Phase3JsonNumber(stdFeatures.priceAbsZ20) + "," +
+            "\"rsi_std_20\":" + Phase3JsonNumber(stdFeatures.rsiStd20) + "," +
+            "\"rsi_std_rank\":" + Phase3JsonNumber(stdFeatures.rsiStdRank) + "," +
+            "\"atr_return_std_ratio\":" + Phase3JsonNumber(stdFeatures.atrReturnStdRatio) + "," +
+            "\"atr_return_std_rank\":" + Phase3JsonNumber(stdFeatures.atrReturnStdRank) + "," +
+            "\"entry_atr_rank\":" + Phase3JsonNumber(entryATRRank) + "," +
+            "\"entry_efficiency_20\":" + Phase3JsonNumber(entryEfficiency20) + "," +
+            "\"initial_sl_atr\":" + Phase3JsonNumber(initialSLATR) + "," +
+            "\"d1_regime_score\":" + IntegerToString(RegimeScore(d1)) + "," +
+            "\"h4_regime_score\":" + IntegerToString(RegimeScore(h4)) + "," +
+            "\"composite_regime_score\":" + IntegerToString(CompositeRegimeScore(d1, h4)) + "," +
+            "\"symbol\":" + Phase3JsonString(_Symbol) + "," +
+            "\"timeframe\":" + Phase3JsonString(Phase3TimeframeCode(entry.tf)) + "," +
+            "\"side\":" + Phase3JsonString(side) + "," +
+            "\"strategy_version\":" + Phase3JsonString(strategyVersion) + "," +
+            "\"d1_bias\":" + Phase3JsonString(BiasText(d1.bias)) + "," +
+            "\"h4_bias\":" + Phase3JsonString(BiasText(h4.bias)) + "," +
+            "\"h1_bias\":" + Phase3JsonString(BiasText(h1.bias)) + "," +
+            "\"source_regime\":null" +
+         "}," +
+         "\"entry_price\":" + Phase3JsonNumber(entryPrice) + "," +
+         "\"risk_distance\":" + Phase3JsonNumber(riskDistance) + "," +
+         "\"initial_sl_distance\":" + Phase3JsonNumber(riskDistance) +
+      "}" +
+   "}";
+   FileWriteString(phase3TelemetryHandle, payload + "\r\n");
+   FileFlush(phase3TelemetryHandle);
 }
 
 bool OpenForwardTelemetry()
@@ -1207,6 +1381,7 @@ int OnInit()
 
    if(!OpenForwardTelemetry())
       return INIT_FAILED;
+   OpenPhase3Telemetry();
 
    if(ExportDiagnosticsCsv)
    {
@@ -1426,6 +1601,12 @@ void OnDeinit(const int reason)
                         "expert_deinitialized");
       FileClose(forwardCsvHandle);
       forwardCsvHandle = INVALID_HANDLE;
+   }
+
+   if(phase3TelemetryHandle != INVALID_HANDLE)
+   {
+      FileClose(phase3TelemetryHandle);
+      phase3TelemetryHandle = INVALID_HANDLE;
    }
 
    if(diagCsvHandle != INVALID_HANDLE)
@@ -5441,6 +5622,12 @@ void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, co
    if(riskDistance <= _Point)
       return;
 
+   double phase3EntrySpreadR = EMPTY_VALUE;
+   double phase3Bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double phase3Ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(phase3Bid > 0.0 && phase3Ask > 0.0)
+      phase3EntrySpreadR = (phase3Ask - phase3Bid) / riskDistance;
+
    string qualityGateReason = "";
    if(!EntryQualityAllows(entry, riskDistance, qualityGateReason))
    {
@@ -5497,6 +5684,9 @@ void OpenTrade(ENUM_ORDER_TYPE type, const TFState &entry, const TFState &d1, co
       ok = trade.Buy(rp.lots, _Symbol, price, sl, tp, comment);
    else
       ok = trade.Sell(rp.lots, _Symbol, price, sl, tp, comment);
+
+   // Ghi snapshot event-time sau khi quyết định lệnh hoàn tất; writer không trả cờ điều khiển strategy.
+   EmitPhase3Telemetry(type, entry, d1, h4, h1, price, riskDistance, phase3EntrySpreadR);
 
    if(ok)
    {
