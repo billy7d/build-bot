@@ -1,0 +1,37 @@
+name: trading-agent-phase3-validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  trading-agent-phase3-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile package
+        run: python -m compileall -q agent
+      - name: Run Phase 1 and Phase 2 and Phase 3 tests
+        run: python -X utf8 -m unittest discover -s agent/tests -v
+      - name: Check migrations and SQLite integrity
+        run: >-
+          python -X utf8 -c
+          "import tempfile; from pathlib import Path; from agent.memory.database import connect_database, apply_migrations, integrity_status, migration_versions; p=Path(tempfile.mkdtemp())/'memory.db'; c=connect_database(p); apply_migrations(c); assert migration_versions(c)[-1]=='008'; assert integrity_status(c)['integrity_ok']; assert integrity_status(c)['foreign_key_ok']; c.close()"
+      - name: Validate frozen bundle and report contract
+        run: >-
+          python -X utf8 -c
+          "import json; from pathlib import Path; from agent.phase3.bundle import validate_bundle; root=Path('.'); validate_bundle(json.loads((root/'reports/trading_agent/phase3/shadow_bundle_manifest.json').read_text(encoding='utf-8'))); report=json.loads((root/'reports/trading_agent/phase3/phase3_status.json').read_text(encoding='utf-8')); expected={'PHASE3_ENGINEERING_STATUS':'PASS','LIVE_BRIDGE_READY':'YES','OFFLINE_LIVE_PARITY_STATUS':'PASS','BUNDLE_FREEZE_STATUS':'PASS','IDEMPOTENCY_STATUS':'PASS','RESTART_RECOVERY_STATUS':'PASS','PREDICTION_IMMUTABILITY_STATUS':'PASS','FORWARD_LEAKAGE_STATUS':'PASS','FORWARD_COLLECTION_STATUS':'READY','FORWARD_SAMPLE_COUNT':0,'FORWARD_PREDICTIVE_EDGE_STATUS':'INSUFFICIENT_DATA','LIVE_EXECUTION_ENABLED':'NO','READY_FOR_PHASE4':'NO'}; assert all(report[key]==value for key,value in expected.items())"
+      - name: Validate no execution API surface
+        run: >-
+          python -X utf8 -c
+          "from pathlib import Path; source=''.join(path.read_text(encoding='utf-8') for path in Path('agent/phase3').rglob('*.py')); forbidden=('order_send','order_modify','order_cancel','position_modify','trade_request'); assert not any(value in source for value in forbidden)"
+      - name: Check diff whitespace
+        run: git diff --check
