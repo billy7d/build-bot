@@ -153,6 +153,33 @@ class Phase2ContractTests(unittest.TestCase):
             self.assertIn("field_provenance", row["provenance"])
             connection.close()
 
+    def test_canonical_view_accepts_cross_audit_rounding_precision(self):
+        with TemporaryDirectory() as directory:
+            connection = _fixture_database(Path(directory) / "memory.db", count=1)
+            episodes = connection.execute(
+                "SELECT episode_id, audit_version FROM trading_episodes ORDER BY audit_version"
+            ).fetchall()
+            # V81 làm tròn 4 chữ số, còn V82 giữ thêm chữ số; đây không phải conflict ngữ nghĩa.
+            for episode_id, audit_version in episodes:
+                value = 0.1493 if audit_version == "V81" else 0.14935
+                feature = connection.execute(
+                    "SELECT raw_features_json FROM episode_features WHERE episode_id = ?",
+                    (episode_id,),
+                ).fetchone()
+                raw_features = json.loads(feature[0])
+                raw_features["entry_spread_r"] = value
+                connection.execute(
+                    "UPDATE episode_features SET spread_r = ?, raw_features_json = ? WHERE episode_id = ?",
+                    (value, json.dumps(raw_features, sort_keys=True), episode_id),
+                )
+            connection.commit()
+
+            row = build_canonical_view(connection)[0]
+            self.assertEqual(row["field_status"]["spread_r"], "VALID")
+            self.assertNotIn("spread_r", row["feature_conflicts"])
+            self.assertAlmostEqual(row["features"]["spread_r"], 0.149325)
+            connection.close()
+
     def test_allowlist_rejects_outcome_and_unknown_fields(self):
         preprocessor = TrainOnlyPreprocessor.fit([{"canonical_opportunity_id": "a", "features": {"rsi": 50}}], ["a"])
         with self.assertRaises(FeatureLeakageError):

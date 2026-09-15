@@ -23,7 +23,8 @@ from .registry import (
 
 
 CANONICAL_VIEW_VERSION = "canonical-modeling-view/1"
-FEATURE_TOLERANCE = {"atol": 1e-8, "rtol": 1e-5}
+# Hai exporter V81/V82 dùng precision khác nhau; tolerance này bao phủ sai số làm tròn tối đa 5e-5.
+FEATURE_TOLERANCE = {"atol": 1e-4, "rtol": 1e-5}
 
 _RAW_FEATURE_ALIASES: dict[str, tuple[str, ...]] = {
     "rsi": ("entry_rsi", "shadow_entry_rsi"),
