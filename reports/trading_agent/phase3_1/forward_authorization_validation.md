@@ -31,4 +31,3 @@ a tracked worktree change.
 No real authorization manifest was written because the required MT5 telemetry
 source was unavailable. Consequently there is no authorized Git SHA, forward
 run ID, source offset, or `ACTIVE` status to report.
-

@@ -29,4 +29,3 @@ zero behavior-difference result. A future gate must run the preserved baseline
 EX5 and the telemetry-enabled EX5 over the same preset/window and compare
 signal count/timestamps/side, order decisions, entry parameters, lot, SL, TP,
 and trade gating before merge.
-

@@ -42,4 +42,3 @@ process lifetime.
 Real collector event-to-prediction latency and backlog measurements are
 `NOT_MEASURED` because no real MT5 source was available. Fixture correctness
 and bounded polling behavior are covered by the contract tests.
-

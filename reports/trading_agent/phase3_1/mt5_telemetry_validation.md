@@ -40,4 +40,3 @@ Exporter p50/p95/max duration is `NOT_MEASURED` because MT5 could not provide a
 live event. The source-level failure isolation is preserved: open/write errors
 are warnings in the independent exporter and do not return a strategy control
 flag.
-
