@@ -126,6 +126,7 @@
   "execution_api_path_count": 0,
   "live_execution_enabled": false,
   "forward_collection_status": "READY",
-  "merge_ready_pending_remote_gates": true,
+  "merge_ready": true,
+  "stop_before_merge": true,
   "root_cause_classification": ["ENVIRONMENT_ERROR", "TESTER_CONFIG_ERROR", "SYMBOL_DATA_ERROR", "EX5_PATH_ERROR"]
 }

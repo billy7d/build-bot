@@ -8,10 +8,10 @@ runtime SQLite database.
 
 1. **Phase 3.1 branch:** `feature/trading-agent-phase3-1-persistent-forward`
 2. **Base SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0`
-3. **Head SHA at PR creation:** `72c9b7a8c0079d13bb9513bdc2f532a2c5036e03` (the report update is a later docs commit on the same PR)
+3. **Head before parity evidence commit:** `10a54dff750512ded8a6f89affc99ca7b4a270a5`; parity evidence commit: `8d90daea4c42fc77f842ba306aa6c48e8dc65dad`
 4. **PR URL:** `https://github.com/billy7d/build-bot/pull/4`.
-5. **CI results:** `PASS` on validated PR head `1402b5f231015a906fe612e84520550443210aaf`: [Phase 3.1 forward validation](https://github.com/billy7d/build-bot/actions/runs/34959012073), [Phase 3 validation](https://github.com/billy7d/build-bot/actions/runs/34959011958), and [Phase 2 validation](https://github.com/billy7d/build-bot/actions/runs/34959011899). Local Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, and `git diff --check` PASS. The report commit may advance the branch; merge remains blocked by MT5 parity.
-6. **Merge SHA:** `N/A` — MT5 execution parity was not available, so the PRD §70 merge gate is not satisfied.
+5. **CI results:** `PASS` on parity evidence head `8d90daea4c42fc77f842ba306aa6c48e8dc65dad`: [Phase 3.1 forward validation](https://github.com/billy7d/build-bot/actions/runs/34980841955), [Phase 3 validation](https://github.com/billy7d/build-bot/actions/runs/34980841942), and [Phase 2 validation](https://github.com/billy7d/build-bot/actions/runs/34980842097). Local Python `52/52 PASS`, compileall PASS, PowerShell parse PASS, and `git diff --check` PASS.
+6. **Merge SHA:** `N/A` — explicit STOP BEFORE MERGE instruction; no merge was performed.
 7. **Final main SHA:** `820887cd11d7771741319f4fb8f8c2342bb342f0` (main was not advanced).
 
 8. **MT5 files inspected:** `E:\build-bot\outputs\Mentor_RSI_MTF_v1.mq5`; `E:\build-bot\outputs\presets\79_v26_forward_demo.set`; `E:\build-bot\outputs\presets\80_v63_forward_demo.set`; `E:\build-bot\outputs\build\mt5-v82-runtime\MQL5\Include\Trade\Trade.mqh`.
@@ -65,12 +65,12 @@ runtime SQLite database.
 49. **FORWARD_PREDICTIVE_EDGE_STATUS:** `INSUFFICIENT_DATA`.
 50. **READY_FOR_PHASE4:** `NO`.
 51. **Raw/runtime data committed?:** `NO` — only source, tests, scripts, workflow, and review reports are intended for Git; `data/` and runtime artifacts remain untracked.
-52. **Blockers/warnings:** The original `-1000012355` was recovered as an environment/configuration/data/deployment issue; deterministic tester parity now passes. Remote push, PR description refresh, new-head CI, and mergeability still require final validation. No live telemetry, authorization, task installation, or forward run was fabricated.
+52. **Blockers/warnings:** No merge blocker remains after deterministic parity, push, CI, and mergeability validation. Live telemetry, authorization, task installation, and forward execution remain intentionally inactive by scope.
 
 ## Safe incomplete activation state
 
 ```text
-PHASE3_1_ENGINEERING_STATUS: PASS (MT5 parity passed; remote gates pending)
+PHASE3_1_ENGINEERING_STATUS: PASS
 PERSISTENT_RUNTIME_READY: YES
 MT5_TESTER_STATUS: PASS
 MT5_TELEMETRY_STATUS: UNAVAILABLE (live source intentionally not started)
@@ -83,5 +83,5 @@ FORWARD_COLLECTION_STATUS: READY
 PERSISTENT_RUNTIME_NOT_STARTED: YES
 LIVE_EXECUTION_ENABLED: NO
 EXECUTION_AUTHORITY: NONE
-MERGE_READY: NO (pending push, PR refresh, new-head CI, and mergeability)
+MERGE_READY: YES
 ```

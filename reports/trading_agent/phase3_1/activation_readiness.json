@@ -3,7 +3,7 @@
   "branch": "feature/trading-agent-phase3-1-persistent-forward",
   "base_sha": "820887cd11d7771741319f4fb8f8c2342bb342f0",
   "implementation_sha": "10a54dff750512ded8a6f89affc99ca7b4a270a5",
-  "phase3_1_engineering_status": "PASS / REMOTE_GATES_PENDING",
+  "phase3_1_engineering_status": "PASS",
   "pr_url": "https://github.com/billy7d/build-bot/pull/4",
   "pr_head_sha_at_creation": "72c9b7a8c0079d13bb9513bdc2f532a2c5036e03",
   "ci_status_at_report_time": "PASS",
@@ -18,7 +18,7 @@
   "mt5_telemetry_status": "UNAVAILABLE_LIVE_SOURCE_NOT_STARTED",
   "mt5_tester_status": "PASS",
   "forward_collection_status": "READY",
-  "forward_activation_status": "NOT_COMPLETED_MT5_UNAVAILABLE",
+  "forward_activation_status": "NOT_ACTIVATED_BY_SCOPE",
   "bundle_version": "phase3-shadow-bundle/1",
   "bundle_id": "p3-bundle-577e5dfd0702c52c8f5318063703dd616a633704444ba5371e1c74e6dc080c6a",
   "historical_reference_cutoff_utc": "2023-12-30T08:00:00Z",
@@ -39,7 +39,7 @@
   "execution_mode": "NONE",
   "execution_authority": "NONE",
   "live_execution_enabled": false,
-  "merge_ready": false,
+  "merge_ready": true,
   "forward_authorization_result": "NOT_CREATED",
   "authorized_git_sha": null,
   "forward_run_id": null,
@@ -58,12 +58,9 @@
   "forward_predictive_edge_status": "INSUFFICIENT_DATA",
   "ready_for_phase4": false,
   "raw_or_runtime_data_committed": false,
-  "blockers": [
-    "Remote push, PR description refresh, new-head CI, and mergeability validation are pending.",
-    "No real MT5 telemetry source was available, so authorization and activation were not started."
-  ],
+  "blockers": [],
   "warnings": [
-    "Do not merge; stop before merge after remote gates pass.",
-    "No live evidence or predictive edge is claimed."
+    "STOP BEFORE MERGE: merge was intentionally not performed.",
+    "No live evidence or predictive edge is claimed; authorization and activation remain out of scope."
   ]
 }
