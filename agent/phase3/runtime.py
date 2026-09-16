@@ -17,9 +17,29 @@ from .config import Phase3Config
 from .evaluation.metrics import evaluate_forward_records
 from .health import HealthTracker, persist_health_event
 from .ingestion.adapter import ReadOnlyTelemetryAdapter
-from .ingestion.canonicalize import canonicalize_event
+from .ingestion.canonicalize import (
+    canonicalize_event,
+    canonicalize_opportunity,
+    derive_canonical_forward_ids,
+)
+from .ingestion.opportunity import (
+    CANONICALIZER_FINGERPRINT,
+    OpportunityValidationError,
+    validate_opportunity_payload,
+)
 from .ingestion.validation import TelemetryValidationError, validate_telemetry_payload
-from .models import RUN_MODES, RUN_STATUSES, TelemetryEvent, format_utc_timestamp, parse_utc_timestamp, sha256_json, utc_now
+from .models import (
+    PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+    PHASE3_CANONICALIZER_VERSION,
+    PHASE3_OPPORTUNITY_SCHEMA,
+    RUN_MODES,
+    RUN_STATUSES,
+    TelemetryEvent,
+    format_utc_timestamp,
+    parse_utc_timestamp,
+    sha256_json,
+    utc_now,
+)
 from .outcomes.resolver import OutcomeResolver
 from .scoring.bridge import Phase2ScoringBridge
 
@@ -195,7 +215,13 @@ class Phase3Runtime:
         self.health.rejected(schema=status == "REJECTED_SCHEMA")
         return {"status": status, "forward_event_id": forward_event_id, "reason": reason}
 
-    def _time_gate(self, run: Any, event: TelemetryEvent) -> tuple[str | None, str | None]:
+    def _time_gate(
+        self,
+        run: Any,
+        event: TelemetryEvent,
+        *,
+        enforce_monotonic: bool = True,
+    ) -> tuple[str | None, str | None]:
         event_time = parse_utc_timestamp(event.event_timestamp_utc)
         now = parse_utc_timestamp(self.clock())
         if event_time > now + timedelta(seconds=self.config.future_tolerance_seconds):
@@ -207,14 +233,502 @@ class Phase3Runtime:
                 return "REJECTED_STALE", "BEFORE_FORWARD_START"
             if event_time <= parse_utc_timestamp(self.bundle.historical_reference_cutoff_utc):
                 return "REJECTED_STALE", "AT_OR_BEFORE_HISTORICAL_CUTOFF"
-        latest = self.connection.execute(
-            "SELECT MAX(event_timestamp_utc) FROM phase3_forward_events WHERE run_id = ? AND validation_status IN ('VALIDATED', 'ACCEPTED')",
-            (str(run["run_id"]),),
-        ).fetchone()[0]
-        if latest and event_time < parse_utc_timestamp(str(latest)):
-            self.health.out_of_order_event()
-            return "REJECTED_STALE", "OUT_OF_ORDER_EVENT"
+        if enforce_monotonic:
+            latest = self.connection.execute(
+                "SELECT MAX(event_timestamp_utc) FROM phase3_forward_events WHERE run_id = ? AND validation_status IN ('VALIDATED', 'ACCEPTED')",
+                (str(run["run_id"]),),
+            ).fetchone()[0]
+            if latest and event_time < parse_utc_timestamp(str(latest)):
+                self.health.out_of_order_event()
+                return "REJECTED_STALE", "OUT_OF_ORDER_EVENT"
         return None, None
+
+    def _opportunity_duplicate(self, run_id: str, source_observation_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            """
+            SELECT observation_id, canonical_opportunity_id, status
+            FROM phase3_opportunity_observations
+            WHERE run_id = ? AND source_observation_id = ?
+            """,
+            (run_id, source_observation_id),
+        ).fetchone()
+        if row is None:
+            return None
+        self.health.duplicate()
+        return {**dict(row), "status": "REJECTED_DUPLICATE", "duplicate": True}
+
+    def _opportunity_observation_id(self, run_id: str, source_observation_id: str) -> str:
+        return "p3-observation-" + sha256_json(
+            {"run_id": str(run_id), "source_observation_id": str(source_observation_id)}
+        )
+
+    def _canonical_record_id(self, run_id: str, canonical_opportunity_id: str) -> str:
+        return "p3-canonical-record-" + sha256_json(
+            {"run_id": str(run_id), "canonical_opportunity_id": str(canonical_opportunity_id)}
+        )
+
+    def _insert_opportunity_observation(
+        self,
+        run_id: str,
+        observation: Any,
+        canonical_id: str,
+        *,
+        status: str,
+        created_at_utc: str,
+    ) -> str:
+        observation_id = self._opportunity_observation_id(run_id, observation.source_observation_id)
+        self.connection.execute(
+            """
+            INSERT INTO phase3_opportunity_observations(
+                observation_id, run_id, source_observation_id, event_timestamp_utc,
+                emitted_at_utc, received_at_utc, source_strategy, source_strategy_version,
+                symbol, timeframe, side, source_audit_family, source_event_type,
+                bar_state, context_features_json, execution_context_json, entry_price,
+                hypothetical_entry_price, risk_distance, initial_sl_distance,
+                hypothetical_initial_sl, build_valid, build_reason,
+                canonical_opportunity_id, canonical_schema, canonicalizer_version,
+                canonicalizer_fingerprint, raw_payload_sha256, raw_payload,
+                schema_version, status, created_at_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                observation_id,
+                run_id,
+                observation.source_observation_id,
+                observation.event_timestamp_utc,
+                observation.emitted_at_utc,
+                observation.received_at_utc,
+                observation.source_strategy,
+                observation.source_strategy_version,
+                observation.symbol,
+                observation.timeframe,
+                observation.side,
+                observation.source_audit_family,
+                observation.source_event_type,
+                observation.bar_state,
+                _json(observation.context_features),
+                _json(observation.execution_context),
+                observation.entry_price,
+                observation.hypothetical_entry_price,
+                observation.risk_distance,
+                observation.initial_sl_distance,
+                observation.hypothetical_initial_sl,
+                int(observation.build_valid),
+                observation.build_reason,
+                canonical_id,
+                PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+                PHASE3_CANONICALIZER_VERSION,
+                CANONICALIZER_FINGERPRINT,
+                _safe_raw_hash(observation.raw_payload),
+                _json(observation.raw_payload),
+                observation.schema_version,
+                status,
+                created_at_utc,
+            ),
+        )
+        return observation_id
+
+    def _process_opportunity_payload(
+        self,
+        run_id: str,
+        payload: Mapping[str, Any],
+        *,
+        source: str,
+        received_at_utc: str | None,
+    ) -> dict[str, Any]:
+        """Lưu raw trước rồi dedup canonical, không làm thay đổi execution state."""
+
+        run = self._run(run_id)
+        self.health.received(received_at_utc)
+        source_observation_id = str(payload.get("source_observation_id", "")) if isinstance(payload, Mapping) else ""
+        if source_observation_id:
+            duplicate = self._opportunity_duplicate(run_id, source_observation_id)
+            if duplicate:
+                with self.connection:
+                    persist_health_event(self.connection, run_id, "DUPLICATE_OPPORTUNITY_OBSERVATION", duplicate, severity="INFO")
+                return duplicate
+        if str(run["status"]) in {"PAUSED", "STOPPED", "FAILED"}:
+            return self._insert_rejection(
+                run_id,
+                payload,
+                source=source,
+                reason="RUN_NOT_ACTIVE",
+                status="REJECTED_CONFLICT",
+                source_event_id=source_observation_id or None,
+                received_at_utc=received_at_utc,
+            )
+        try:
+            observation = validate_opportunity_payload(payload, source=source, received_at_utc=received_at_utc)
+            evidence, canonical = canonicalize_opportunity(observation, run_id=run_id)
+        except (OpportunityValidationError, TypeError, ValueError) as exc:
+            return self._insert_rejection(
+                run_id,
+                payload,
+                source=source,
+                reason=str(exc),
+                status="REJECTED_SCHEMA",
+                source_event_id=source_observation_id or None,
+                received_at_utc=received_at_utc,
+            )
+
+        existing = self.connection.execute(
+            "SELECT * FROM phase3_canonical_opportunities WHERE run_id = ? AND canonical_opportunity_id = ?",
+            (run_id, evidence.canonical_opportunity_id),
+        ).fetchone()
+        committed_at = format_utc_timestamp(self.clock())
+        if existing is not None:
+            try:
+                with self.connection:
+                    self._insert_opportunity_observation(
+                        run_id,
+                        observation,
+                        evidence.canonical_opportunity_id,
+                        status="DUPLICATE_COLLAPSED",
+                        created_at_utc=committed_at,
+                    )
+                    self.connection.execute(
+                        """
+                        UPDATE phase3_canonical_opportunities
+                        SET raw_observation_count = raw_observation_count + 1,
+                            duplicate_observation_count = duplicate_observation_count + 1,
+                            updated_at_utc = ?
+                        WHERE run_id = ? AND canonical_opportunity_id = ?
+                        """,
+                        (committed_at, run_id, evidence.canonical_opportunity_id),
+                    )
+                    persist_health_event(
+                        self.connection,
+                        run_id,
+                        "CANONICAL_DUPLICATE_COLLAPSED",
+                        {"canonical_opportunity_id": evidence.canonical_opportunity_id},
+                        severity="INFO",
+                    )
+            except Exception as exc:
+                return self._insert_rejection(
+                    run_id,
+                    payload,
+                    source=source,
+                    reason=f"FAIL_CLOSED:{exc}",
+                    status="REJECTED_CONFLICT",
+                    source_event_id=observation.source_observation_id,
+                    received_at_utc=observation.received_at_utc,
+                )
+            return {
+                "status": "DUPLICATE_COLLAPSED",
+                "duplicate": True,
+                "observation_id": self._opportunity_observation_id(run_id, observation.source_observation_id),
+                "canonical_opportunity_id": evidence.canonical_opportunity_id,
+                "duplicate_observation_count": int(existing["duplicate_observation_count"]) + 1,
+            }
+
+        gate_status, gate_reason = self._time_gate(
+            run,
+            observation.to_telemetry_event(),
+            enforce_monotonic=False,
+        )
+        if gate_status:
+            return self._insert_rejection(
+                run_id,
+                payload,
+                source=source,
+                reason=gate_reason or "TIME_GATE",
+                status=gate_status,
+                source_event_id=observation.source_observation_id,
+                received_at_utc=observation.received_at_utc,
+            )
+        canonical_record_id = self._canonical_record_id(run_id, evidence.canonical_opportunity_id)
+        if not observation.build_valid:
+            try:
+                with self.connection:
+                    observation_id = self._insert_opportunity_observation(
+                        run_id,
+                        observation,
+                        evidence.canonical_opportunity_id,
+                        status="INVALID",
+                        created_at_utc=committed_at,
+                    )
+                    self.connection.execute(
+                        """
+                        INSERT INTO phase3_canonical_opportunities(
+                            canonical_record_id, run_id, canonical_opportunity_id,
+                            representative_observation_id, event_timestamp_utc,
+                            source_strategy_version, symbol, timeframe, side,
+                            canonical_schema, canonicalizer_version, canonicalizer_fingerprint,
+                            status, raw_observation_count, duplicate_observation_count,
+                            build_valid, build_reason, score_status, forward_event_id,
+                            prediction_id, created_at_utc, updated_at_utc
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INVALID', 1, 0, 0, ?, 'NO_OPINION', NULL, NULL, ?, ?)
+                        """,
+                        (
+                            canonical_record_id,
+                            run_id,
+                            evidence.canonical_opportunity_id,
+                            observation_id,
+                            observation.event_timestamp_utc,
+                            observation.source_strategy_version,
+                            observation.symbol,
+                            observation.timeframe,
+                            observation.side,
+                            PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+                            PHASE3_CANONICALIZER_VERSION,
+                            CANONICALIZER_FINGERPRINT,
+                            observation.build_reason,
+                            committed_at,
+                            committed_at,
+                        ),
+                    )
+                    persist_health_event(
+                        self.connection,
+                        run_id,
+                        "INVALID_OPPORTUNITY_BUILD",
+                        {"canonical_opportunity_id": evidence.canonical_opportunity_id, "reason": observation.build_reason},
+                        severity="WARNING",
+                    )
+            except Exception as exc:
+                return self._insert_rejection(
+                    run_id,
+                    payload,
+                    source=source,
+                    reason=f"FAIL_CLOSED:{exc}",
+                    status="REJECTED_CONFLICT",
+                    source_event_id=observation.source_observation_id,
+                    received_at_utc=observation.received_at_utc,
+                )
+            self.health.accepted()
+            self.health.prediction(committed_at, no_opinion=True, latency_ms=0.0)
+            return {
+                "status": "INVALID",
+                "observation_id": self._opportunity_observation_id(run_id, observation.source_observation_id),
+                "canonical_opportunity_id": evidence.canonical_opportunity_id,
+                "build_valid": False,
+                "build_reason": observation.build_reason,
+            }
+
+        started = time.perf_counter()
+        try:
+            scored_at = format_utc_timestamp(self.clock())
+            snapshot, score = self.bridge.score_event(canonical, scored_at_utc=scored_at)
+            committed_at = format_utc_timestamp(self.clock())
+            if parse_utc_timestamp(committed_at) < parse_utc_timestamp(scored_at):
+                raise Phase3RuntimeError("clock moved backward during prediction commit")
+            forward_event_id, prediction_id = derive_canonical_forward_ids(run_id, evidence.canonical_opportunity_id)
+            primary_status = "SCORABLE" if score.score_status == "OK" else "NO_OPINION"
+            prediction_material = {
+                "prediction_id": prediction_id,
+                "forward_event_id": forward_event_id,
+                "forward_run_id": run_id,
+                "forward_opportunity_id": evidence.canonical_opportunity_id,
+                "canonicalizer_version": PHASE3_CANONICALIZER_VERSION,
+                "source_event_timestamp_utc": observation.event_timestamp_utc,
+                "received_at_utc": observation.received_at_utc,
+                "scored_at_utc": scored_at,
+                "prediction_committed_at_utc": committed_at,
+                "bundle_id": self.bundle.bundle_id,
+                "feature_snapshot_fingerprint": snapshot.feature_fingerprint,
+                "regime": score.regime,
+                "regime_confidence": score.regime_confidence,
+                "similarity_status": score.similarity_status,
+                "similarity_sample_size": score.similarity_sample_size,
+                "similarity_summary_json": _json(score.similarity_summary),
+                "probability_plus1_before_minus1": score.probability_plus1_before_minus1,
+                "expected_return_24bar_r": score.expected_return_24bar_r,
+                "confidence": score.confidence,
+                "ood_status": score.ood_status,
+                "ood_score": score.ood_score,
+                "score_status": score.score_status,
+                "abstention_reason": score.abstention_reason,
+                "code_sha": score.code_sha,
+                "forward_valid": int(str(run["mode"]) == "FORWARD"),
+                "created_at_utc": committed_at,
+            }
+            prediction_hash = sha256_json(prediction_material)
+            with self.connection:
+                persist_bundle(self.connection, self.bundle)
+                observation_id = self._insert_opportunity_observation(
+                    run_id,
+                    observation,
+                    evidence.canonical_opportunity_id,
+                    status="CANONICALIZED",
+                    created_at_utc=committed_at,
+                )
+                self.connection.execute(
+                    """
+                    INSERT INTO phase3_canonical_opportunities(
+                        canonical_record_id, run_id, canonical_opportunity_id,
+                        representative_observation_id, event_timestamp_utc,
+                        source_strategy_version, symbol, timeframe, side,
+                        canonical_schema, canonicalizer_version, canonicalizer_fingerprint,
+                        status, raw_observation_count, duplicate_observation_count,
+                        build_valid, build_reason, score_status, forward_event_id,
+                        prediction_id, created_at_utc, updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 1, NULL, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        canonical_record_id,
+                        run_id,
+                        evidence.canonical_opportunity_id,
+                        observation_id,
+                        observation.event_timestamp_utc,
+                        observation.source_strategy_version,
+                        observation.symbol,
+                        observation.timeframe,
+                        observation.side,
+                        PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+                        PHASE3_CANONICALIZER_VERSION,
+                        CANONICALIZER_FINGERPRINT,
+                        primary_status,
+                        score.score_status,
+                        forward_event_id,
+                        prediction_id,
+                        committed_at,
+                        committed_at,
+                    ),
+                )
+                self.connection.execute(
+                    """
+                    INSERT INTO phase3_forward_events(
+                        forward_event_id, run_id, forward_opportunity_id, source_event_id,
+                        event_timestamp_utc, received_at_utc, symbol, timeframe, side,
+                        candidate_type, bar_state, source_timezone, raw_payload_sha256,
+                        raw_payload, schema_version, validation_status, lifecycle_status,
+                        failure_reason, created_at_utc, source_role, canonical_opportunity_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'CANONICAL_OPPORTUNITY', ?)
+                    """,
+                    (
+                        forward_event_id,
+                        run_id,
+                        evidence.canonical_opportunity_id,
+                        observation.source_observation_id,
+                        observation.event_timestamp_utc,
+                        observation.received_at_utc,
+                        observation.symbol,
+                        observation.timeframe,
+                        observation.side,
+                        observation.candidate_type,
+                        observation.bar_state,
+                        observation.source_timezone,
+                        _safe_raw_hash(observation.raw_payload),
+                        _json(observation.raw_payload),
+                        observation.schema_version,
+                        "VALIDATED",
+                        "CANONICALIZED",
+                        committed_at,
+                        evidence.canonical_opportunity_id,
+                    ),
+                )
+                self.connection.execute(
+                    """
+                    INSERT INTO phase3_feature_snapshots(
+                        forward_event_id, feature_set_version, feature_timestamp_utc,
+                        feature_fingerprint, feature_values_json, missingness_json,
+                        ood_inputs_json, created_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        forward_event_id,
+                        snapshot.feature_set_version,
+                        snapshot.feature_timestamp_utc,
+                        snapshot.feature_fingerprint,
+                        _json(snapshot.feature_values),
+                        _json(snapshot.missingness),
+                        _json({**dict(snapshot.ood_inputs), "vector": list(snapshot.vector), "output_names": list(snapshot.output_names)}),
+                        committed_at,
+                    ),
+                )
+                self.connection.execute(
+                    """
+                    INSERT INTO phase3_predictions(
+                        prediction_id, forward_event_id, forward_run_id,
+                        forward_opportunity_id, source_event_timestamp_utc,
+                        received_at_utc, scored_at_utc, prediction_committed_at_utc,
+                        bundle_id, feature_snapshot_fingerprint, regime,
+                        regime_confidence, similarity_status, similarity_sample_size,
+                        similarity_summary_json, probability_plus1_before_minus1,
+                        expected_return_24bar_r, confidence, ood_status, ood_score,
+                        score_status, abstention_reason, code_sha, forward_valid,
+                        prediction_hash, created_at_utc, source_role,
+                        canonical_opportunity_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CANONICAL_OPPORTUNITY', ?)
+                    """,
+                    (
+                        prediction_id,
+                        forward_event_id,
+                        run_id,
+                        evidence.canonical_opportunity_id,
+                        observation.event_timestamp_utc,
+                        observation.received_at_utc,
+                        scored_at,
+                        committed_at,
+                        self.bundle.bundle_id,
+                        snapshot.feature_fingerprint,
+                        score.regime,
+                        score.regime_confidence,
+                        score.similarity_status,
+                        score.similarity_sample_size,
+                        _json(score.similarity_summary),
+                        score.probability_plus1_before_minus1,
+                        score.expected_return_24bar_r,
+                        score.confidence,
+                        score.ood_status,
+                        score.ood_score,
+                        score.score_status,
+                        score.abstention_reason,
+                        score.code_sha,
+                        prediction_material["forward_valid"],
+                        prediction_hash,
+                        committed_at,
+                        evidence.canonical_opportunity_id,
+                    ),
+                )
+                self.connection.execute(
+                    "UPDATE phase3_forward_events SET lifecycle_status = 'OUTCOME_PENDING' WHERE forward_event_id = ?",
+                    (forward_event_id,),
+                )
+                persist_health_event(
+                    self.connection,
+                    run_id,
+                    "CANONICAL_PREDICTION_COMMITTED",
+                    {"canonical_opportunity_id": evidence.canonical_opportunity_id, "score_status": score.score_status},
+                )
+            latency_ms = (time.perf_counter() - started) * 1000.0
+            self.health.accepted()
+            self.health.feature_quality(
+                missing=any(snapshot.missingness.values()),
+                ood=bool(snapshot.ood_inputs.get("is_ood")) and "MODEL_PREPROCESSOR_UNAVAILABLE" not in snapshot.ood_inputs.get("reasons", ()),
+            )
+            self.health.prediction(committed_at, no_opinion=score.score_status != "OK", latency_ms=latency_ms)
+            self.health.pending()
+            return {
+                "status": "PREDICTION_COMMITTED",
+                "observation_id": observation_id,
+                "forward_event_id": forward_event_id,
+                "forward_opportunity_id": evidence.canonical_opportunity_id,
+                "canonical_opportunity_id": evidence.canonical_opportunity_id,
+                "prediction_id": prediction_id,
+                "score": score.to_dict(),
+                "feature_snapshot": snapshot.to_dict(),
+                "forward_valid": prediction_material["forward_valid"],
+            }
+        except (FeatureLeakageError, FeatureSchemaError, OpportunityValidationError, TelemetryValidationError) as exc:
+            return self._insert_rejection(
+                run_id,
+                payload,
+                source=source,
+                reason=str(exc),
+                status="REJECTED_CONFLICT",
+                source_event_id=observation.source_observation_id,
+                received_at_utc=observation.received_at_utc,
+            )
+        except Exception as exc:
+            return self._insert_rejection(
+                run_id,
+                payload,
+                source=source,
+                reason=f"FAIL_CLOSED:{exc}",
+                status="REJECTED_CONFLICT",
+                source_event_id=observation.source_observation_id,
+                received_at_utc=observation.received_at_utc,
+            )
 
     def process_payload(
         self,
@@ -225,6 +739,14 @@ class Phase3Runtime:
         received_at_utc: str | None = None,
     ) -> dict[str, Any]:
         """Process một payload hoàn chỉnh; outcome tuyệt đối chưa được đọc ở đây."""
+
+        if isinstance(payload, Mapping) and payload.get("schema_version") == PHASE3_OPPORTUNITY_SCHEMA:
+            return self._process_opportunity_payload(
+                run_id,
+                payload,
+                source=source,
+                received_at_utc=received_at_utc,
+            )
 
         run = self._run(run_id)
         self.health.received(received_at_utc)
@@ -410,6 +932,7 @@ class Phase3Runtime:
         *,
         source: str | None = None,
         file_format: str = "jsonl",
+        expected_schema: str | None = None,
     ) -> dict[str, Any]:
         """Đọc phần mới; partial final line chờ lần sau, rotation reset đúng một lần."""
 
@@ -468,7 +991,18 @@ class Phase3Runtime:
                     status="REJECTED_SCHEMA",
                 )
             else:
-                result = self.process_payload(run_id, parsed.payload or {}, source=source or source_key)
+                payload = parsed.payload or {}
+                if expected_schema and payload.get("schema_version") != expected_schema:
+                    result = self._insert_rejection(
+                        run_id,
+                        payload,
+                        source=source or source_key,
+                        reason=f"PRIMARY_SOURCE_SCHEMA_MISMATCH:{payload.get('schema_version', '<missing>')}",
+                        status="REJECTED_SCHEMA",
+                        source_event_id=str(payload.get("source_observation_id") or payload.get("source_event_id") or "") or None,
+                    )
+                else:
+                    result = self.process_payload(run_id, payload, source=source or source_key)
             results.append(result)
             rotation_state: dict[str, Any] = {}
             if offset:
@@ -634,12 +1168,39 @@ class Phase3Runtime:
 
     def status(self, run_id: str | None = None) -> dict[str, Any]:
         run = self._run(run_id) if run_id else None
+        run_clause = " WHERE run_id = ?" if run_id else ""
+        run_params: tuple[Any, ...] = (run_id,) if run_id else ()
+        canonical_counts = self.connection.execute(
+            """
+            SELECT
+                COUNT(*) AS canonical_count,
+                COALESCE(SUM(duplicate_observation_count), 0) AS duplicate_count,
+                COALESCE(SUM(CASE WHEN status = 'SCORABLE' THEN 1 ELSE 0 END), 0) AS scorable_count,
+                COALESCE(SUM(CASE WHEN status = 'NO_OPINION' THEN 1 ELSE 0 END), 0) AS no_opinion_count,
+                COALESCE(SUM(CASE WHEN status = 'INVALID' THEN 1 ELSE 0 END), 0) AS invalid_count
+            FROM phase3_canonical_opportunities
+            """ + run_clause,
+            run_params,
+        ).fetchone()
+        raw_observation_count = int(
+            self.connection.execute(
+                "SELECT COUNT(*) FROM phase3_opportunity_observations" + run_clause,
+                run_params,
+            ).fetchone()[0]
+        )
         counts = {
             "events": int(self.connection.execute("SELECT COUNT(*) FROM phase3_forward_events" + (" WHERE run_id = ?" if run_id else ""), (run_id,) if run_id else ()).fetchone()[0]),
             "predictions": int(self.connection.execute("SELECT COUNT(*) FROM phase3_predictions" + (" WHERE forward_run_id = ?" if run_id else ""), (run_id,) if run_id else ()).fetchone()[0]),
             "pending_outcomes": int(self.connection.execute("SELECT COUNT(*) FROM phase3_predictions p WHERE NOT EXISTS (SELECT 1 FROM phase3_outcomes o WHERE o.forward_event_id = p.forward_event_id)" + (" AND p.forward_run_id = ?" if run_id else ""), (run_id,) if run_id else ()).fetchone()[0]),
             "resolved_outcomes": int(self.connection.execute("SELECT COUNT(*) FROM phase3_outcomes o" + (" JOIN phase3_forward_events e ON e.forward_event_id=o.forward_event_id WHERE o.status='RESOLVED' AND e.run_id = ?" if run_id else " WHERE o.status='RESOLVED'"), (run_id,) if run_id else ()).fetchone()[0]),
+            "raw_observation_count": raw_observation_count,
+            "canonical_opportunity_count": int(canonical_counts["canonical_count"]),
+            "duplicate_collapse_count": int(canonical_counts["duplicate_count"]),
+            "scorable_count": int(canonical_counts["scorable_count"]),
+            "no_opinion_count": int(canonical_counts["no_opinion_count"]),
+            "invalid_count": int(canonical_counts["invalid_count"]),
         }
+        counts["forward_sample_count"] = counts["scorable_count"] + counts["no_opinion_count"]
         self.health.sync_pending(counts["pending_outcomes"])
         integrity = integrity_status(self.connection)
         return {
@@ -650,6 +1211,8 @@ class Phase3Runtime:
             "health": self.health.to_dict(),
             "resource_safety": self._resource_safety(run_id),
             "sqlite": integrity,
+            "primary_source": "CANONICAL_OPPORTUNITY",
+            "execution_diagnostic_source": "EXECUTION_CANDIDATE",
             "execution_mode": "NONE",
             "live_execution_enabled": False,
         }

@@ -1,102 +1,124 @@
-# MT5 execution parity report
+# MT5 Execution Parity Report — Phase 3.1 Canonical Telemetry
 
 ## Gate result
-
-The deterministic MT5 Strategy Tester run recovered and the preserved baseline
-was compared with the telemetry-enabled candidate over the same tester inputs.
 
 ```text
 MT5_TESTER_STATUS: PASS
 MT5_EXECUTION_PARITY: PASS
 EXECUTION_BEHAVIOR_DIFFERENCE_COUNT: 0
-SIGNAL_DIFFERENCE_COUNT: 0
-ORDER_DIFFERENCE_COUNT: 0
-DO_NOT_MERGE: YES (explicit STOP BEFORE MERGE instruction)
 ```
 
-The source diff remains additive only (`190` lines added, no execution-source
-lines removed). The telemetry call is after the existing buy/sell request and
-its result is not read by entry, exit, lot, SL, TP, risk, or gating logic.
+The prior `-1000012355` blocker was an environment/session-state failure in the
+repository portable runtime. It was recovered by using the installed MT5 build
+6182 and its broker-synchronized data directory. No trading source, model,
+bundle, cutoff, risk, gate, or canonical telemetry logic was changed for this
+recovery.
+
+The exact candidate source head tested was
+`148dc44b18d3f8b9658ac83c593819b009eba8e5`; the baseline was main at
+`6c3b9574f962f55bfb01e168f70eef0cad5e029c`.
 
 ## Tester environment
 
-- Intended portable runtime: `E:\build-bot\outputs\build\mt5-latest`.
-- Terminal: `E:\build-bot\outputs\build\mt5-latest\terminal64.exe`, build `5.0.0.6182`.
-- MetaEditor: `E:\build-bot\outputs\build\mt5-latest\MetaEditor64.exe`.
-- Tester: `E:\build-bot\outputs\build\mt5-latest\metatester64.exe`.
-- Tester-visible EA directory: `E:\build-bot\outputs\build\mt5-latest\MQL5\Experts\Advisors`.
-- Tester logs: `E:\build-bot\outputs\build\mt5-latest\Tester\logs\20260915.log` and the local agent log.
-- Report directory: `E:\build-bot\outputs\build\mt5-latest\reports\codex`.
-- Symbol/timeframe: `BTCUSD`, `H1`.
-- Date range: `2023.04.01 00:00` through `2023.12.31 00:00`.
-- Model: `4` (Every tick based on real ticks); `ExecutionMode=0`.
-- Optimization/forward/remote/cloud: `0` / `0` / disabled / disabled.
-- Deposit/currency/leverage: `5000` / `USD` / `1:10`.
-- Inputs: `79_v26_forward_demo.set`, copied to the tester-visible `MQL5\Profiles\Tester` directory.
+| Item | Value |
+|---|---|
+| Terminal | `D:\MetaTrader5\terminal64.exe` |
+| Terminal build | `5.0.0.6182` |
+| MetaEditor | `D:\MetaTrader5\metaeditor64.exe` build `6182` |
+| Data directory | `C:\Users\billy\AppData\Roaming\MetaQuotes\Terminal\03CEB46CA524FF6019F2D25A05B7513B` |
+| Broker server | `Exness-MT5Real15` |
+| Symbol | `BTCUSD` |
+| Timeframe | `H1` |
+| Date range | `2023.04.01` through `2023.12.31` |
+| Tester model | `4` — Every tick based on real ticks |
+| Deposit / leverage | `5000 USD` / `1:10` |
+| Execution mode | `0` |
+| AllowLiveTrading | `0` |
 
-Both runs used the same terminal, symbol, timeframe, historical cache, model,
-execution mode, date range, deposit, currency, leverage, and preset. The only
-participant change was the EA artifact and report filename.
+The terminal log recorded `authorized on Exness-MT5Real15` and `terminal
+synchronized with Exness Technologies Ltd` before every sanity, baseline and
+candidate run. The Tester log recorded `BTCUSD,H1`, `6576 bars generated`,
+environment synchronization, and `successfully finished` for every full-range
+run.
 
-## Participants and results
+## Recovery and sanity evidence
 
-Baseline A is the exact original EA source at base commit
-`820887cd11d7771741319f4fb8f8c2342bb342f0`, compiled as
-`Phase31Baseline.ex5`. Candidate B is the current branch source at the reviewed
-head `10a54dff750512ded8a6f89affc99ca7b4a270a5`, compiled as
-`Phase31Telemetry.ex5`. SHA-256 identities and timestamps are recorded in
-`execution_parity.json`.
+The old portable attempt was classified as
+`ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR`: its log contained no
+connection/authentication failure and tester-not-synchronized messages, and it
+created no report. The installed terminal then passed a short sanity run on
+`BTCUSD/H1`, `2023.04.01` through `2023.04.07`, model `4`.
 
-The sanity run first loaded the baseline for `2023.04.01`–`2023.04.07` and
-created a non-empty report. It recorded `522706` real ticks, `144` bars, and
-`6` total trades. It is a tester-health result, not the parity result.
-
-The official runs both completed successfully with `100% real ticks`,
-`30904792` ticks, and `6576` bars:
-
-| Metric | Baseline A | Candidate B | Difference |
-| --- | ---: | ---: | ---: |
-| Report total trades | 150 | 150 | 0 |
-| Closed cycles | 94 | 94 | 0 |
-| Report deal sequence | 248 | 248 | 0 |
-| Orders | 248 | 248 | 0 |
-| Accepted entry signal trace (time/side/comment) | 98 | 98 | 0 |
-| Filled order states | 248 | 248 | 0 |
-| Total net profit | 113.56 | 113.56 | 0 |
-| Final balance | 5113.56 | 5113.56 | 0 |
-
-The existing `tools/mt5/compare_execution_regression.py` returned
-`equal=true`, with a complete 248-deal sequence and no mismatches. The order
-table comparison also matched open/order timestamps, side/type, volume,
-market-price field, SL, TP, state, and comment. Diagnostic `OnTester` groups
-for the official baseline and candidate matched exactly, including core trade,
-side, and gate-counter fields. Numeric comparisons used `1e-6`; timestamps,
-symbol, direction, state, comments, and event ordering remained exact strings.
-
-## Recovery root cause
-
-The original `-1000012355` was not evidence of an MQL5 trading-logic defect.
-The startup log showed the terminal could not connect to
-`Exness-MT5Real15`, reported that the tester was not synchronized with the
-trade server, and then produced no report. The old configuration also started
-in January 2023 while the selected portable runtime had local BTCUSD tick
-files beginning in April, and the required preset/artifact deployment was not
-present at the tester-visible paths. The evidence-supported classification is:
+Sanity report:
 
 ```text
-ENVIRONMENT_ERROR + TESTER_CONFIG_ERROR + SYMBOL_DATA_ERROR + EX5_PATH_ERROR
+path: C:\Users\billy\AppData\Roaming\MetaQuotes\Terminal\03CEB46CA524FF6019F2D25A05B7513B\reports\codex\phase3_d_installed_sanity.html
+bytes: 64724
+tester result: successfully finished
+test duration: 0:00:01.347
 ```
 
-Recovery consisted only of selecting the explicit portable runtime, waiting for
-normal terminal authorization/synchronization, deploying the exact baseline
-and candidate EX5 artifacts under `MQL5\Experts\Advisors`, copying the existing
-preset, and using the first fully cached deterministic date range. No strategy,
-model, bundle, cutoff, risk, lot, SL/TP, gate, or forward-authorization logic
-was changed. Full diagnostic evidence is in `mt5_tester_diagnostic.md`.
+The report was non-empty and timestamped by the current sanity run. No report
+was fabricated.
 
-## Artifact handling
+## Baseline and candidate artifacts
 
-The two HTML reports and raw terminal/agent logs remain runtime evidence only;
-they are not committed. The repository contains sanitized metadata and counts
-in `execution_parity.json`, with no runtime database, tester cache, or broker
-private data.
+| Artifact | Source revision | EX5 size | SHA-256 |
+|---|---|---:|---|
+| Baseline | `6c3b9574f962f55bfb01e168f70eef0cad5e029c` | 277194 | `6671A56F2FB2C12B2ED4871EEFC9C1C476730094EEEC789EC1848CAA9D52715E` |
+| Candidate | `148dc44b18d3f8b9658ac83c593819b009eba8e5` | 305704 | `A4E77D4A16EE17B5327DFDBA8B5D8F503413BB419C61082B93A92A8FD63565BE` |
+
+The candidate V26 and V63 `.set` files had
+`ExportPhase3OpportunityJsonl=true` and
+`ExportPhase3OpportunityInTester=true`. Candidate-only JSONL was validated as
+`phase3-opportunity-observation/1` with 735 V26 rows and 443 V63 rows. This is
+observer evidence only; it is not used to make execution parity pass.
+
+## Same-environment parity results
+
+| Variant | Baseline / candidate total trades | Baseline / candidate deal events | Baseline / candidate signal events | Baseline / candidate order events | Signal diff | Order diff | Execution diff |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| V26 | 150 / 150 | 248 / 248 | 98 / 98 | 248 / 248 | 0 | 0 | 0 |
+| V63 | 141 / 141 | 230 / 230 | 89 / 89 | 230 / 230 | 0 | 0 | 0 |
+
+The existing `compare_execution_regression.py` comparator returned `equal=true`
+for both V26 and V63, with report metrics and ordered deal sequences equal and
+no mismatches. The independent Tester-journal stream comparison also found
+equal signal, order-performed, deal-performed, gate/diagnostic, position and
+close behavior streams. The first differing trading event is therefore none.
+
+The numeric tolerances were `price=1e-6`, `lot=1e-6`, `SL=1e-6`, and `TP=1e-6`.
+They apply only to floating-point serialization. Missing, extra, direction-
+changing, or gate-changing events were not tolerated.
+
+Reports created by the tester were checked as external runtime artifacts:
+
+```text
+V26 baseline: 304668 bytes, successfully finished in 0:02:25.455
+V26 candidate: 305320 bytes, successfully finished in 0:02:26.699
+V63 baseline: 288756 bytes, successfully finished in 0:01:46.068
+V63 candidate: 289408 bytes, successfully finished in 0:01:47.780
+```
+
+Raw HTML reports, terminal logs, agent logs, common-files telemetry and tester
+cache remain outside Git. Only sanitized lightweight evidence is intended for
+the repository.
+
+## Safety and remaining release gate
+
+```text
+MQL5_COMPILE: PASS (0 errors, 0 warnings)
+EXECUTION_API_PATH_COUNT: 0
+LIVE_EXECUTION_ENABLED: NO
+EXECUTION_AUTHORITY: NONE
+TRADE_CONTROL_AUTHORITY: NONE
+FORWARD_COLLECTION_STATUS: READY
+FORWARD_AUTHORIZATION: NOT_CREATED
+TASK_SCHEDULER: NOT_INSTALLED
+FORWARD_RUN: NONE
+```
+
+The evidence establishes `MT5_EXECUTION_PARITY=PASS`. Final `MERGE_READY` is
+subject to rerunning the repository gates on the evidence commit, CI on that
+exact new PR head, and a fresh PR mergeability/behind-main check. The process
+stops before merge.

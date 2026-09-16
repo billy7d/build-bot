@@ -23,7 +23,17 @@ from ..similarity.models import SimilarityConfig
 from .bundle import ShadowBundle, validate_bundle
 from .config import Phase3Config
 from .ingestion.file_tail import file_source_identity
-from .models import PHASE3_TELEMETRY_SCHEMA, format_utc_timestamp, parse_utc_timestamp, sha256_json, utc_now
+from .ingestion.opportunity import CANONICALIZER_FINGERPRINT
+from .models import (
+    PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+    PHASE3_CANONICALIZER_VERSION,
+    PHASE3_OPPORTUNITY_SCHEMA,
+    PHASE3_TELEMETRY_SCHEMA,
+    format_utc_timestamp,
+    parse_utc_timestamp,
+    sha256_json,
+    utc_now,
+)
 from .runtime import Phase3Runtime
 
 
@@ -105,9 +115,15 @@ class ForwardRuntimeConfig:
     history_index_path: str
     telemetry_path: str
     runtime_db: str
+    primary_opportunity_path: str | None = None
+    execution_diagnostic_path: str | None = None
     telemetry_format: str = "jsonl"
     telemetry_source: str = "mt5-phase3"
     schema_version: str = PHASE3_TELEMETRY_SCHEMA
+    primary_opportunity_schema: str = PHASE3_OPPORTUNITY_SCHEMA
+    canonical_schema: str = PHASE3_CANONICAL_OPPORTUNITY_SCHEMA
+    canonicalizer_version: str = PHASE3_CANONICALIZER_VERSION
+    canonicalizer_fingerprint: str = CANONICALIZER_FINGERPRINT
     execution_mode: str = "NONE"
     live_execution_enabled: bool = False
     heartbeat_interval_seconds: int = 30
@@ -122,6 +138,14 @@ class ForwardRuntimeConfig:
             raise ForwardControlError("runtime live_execution_enabled must be false")
         if self.schema_version != PHASE3_TELEMETRY_SCHEMA:
             raise ForwardControlError("runtime telemetry schema does not match Phase 3")
+        if self.primary_opportunity_schema != PHASE3_OPPORTUNITY_SCHEMA:
+            raise ForwardControlError("primary source must use the opportunity observation schema")
+        if self.canonical_schema != PHASE3_CANONICAL_OPPORTUNITY_SCHEMA:
+            raise ForwardControlError("primary source canonical schema does not match Phase 3")
+        if self.canonicalizer_version != PHASE3_CANONICALIZER_VERSION:
+            raise ForwardControlError("primary source canonicalizer version does not match Phase 1")
+        if self.canonicalizer_fingerprint != CANONICALIZER_FINGERPRINT:
+            raise ForwardControlError("primary source canonicalizer fingerprint does not match Phase 1")
         if str(self.telemetry_format).lower() not in {"jsonl", "ndjson", "csv"}:
             raise ForwardControlError("runtime telemetry_format must be jsonl, ndjson or csv")
         if self.heartbeat_interval_seconds < 1 or self.heartbeat_stale_seconds < self.heartbeat_interval_seconds:
@@ -134,6 +158,8 @@ class ForwardRuntimeConfig:
         ):
             if not str(getattr(self, field_name)).strip():
                 raise ForwardControlError(f"runtime config field is empty: {field_name}")
+        if not self.primary_opportunity_path or not str(self.primary_opportunity_path).strip():
+            raise ForwardControlError("runtime config requires primary_opportunity_path")
 
     @property
     def root(self) -> Path:
@@ -169,7 +195,17 @@ class ForwardRuntimeConfig:
 
     @property
     def telemetry(self) -> Path:
-        return Path(self.telemetry_path)
+        return Path(self.execution_diagnostic_path or self.telemetry_path)
+
+    @property
+    def primary_opportunity(self) -> Path:
+        """Đường dẫn raw opportunity primary, tách hẳn khỏi stream diagnostic cũ."""
+
+        return Path(str(self.primary_opportunity_path))
+
+    @property
+    def has_explicit_primary_source(self) -> bool:
+        return bool(self.primary_opportunity_path and str(self.primary_opportunity_path).strip())
 
     @property
     def db(self) -> Path:
@@ -205,6 +241,10 @@ class ForwardRuntimeConfig:
             "telemetry_format": "jsonl",
             "telemetry_source": "mt5-phase3",
             "schema_version": PHASE3_TELEMETRY_SCHEMA,
+            "primary_opportunity_schema": PHASE3_OPPORTUNITY_SCHEMA,
+            "canonical_schema": PHASE3_CANONICAL_OPPORTUNITY_SCHEMA,
+            "canonicalizer_version": PHASE3_CANONICALIZER_VERSION,
+            "canonicalizer_fingerprint": CANONICALIZER_FINGERPRINT,
             "execution_mode": "NONE",
             "live_execution_enabled": False,
             "heartbeat_interval_seconds": 30,
@@ -214,12 +254,15 @@ class ForwardRuntimeConfig:
         }
         values = dict(defaults)
         values.update({key: payload[key] for key in cls.__dataclass_fields__ if key in payload})
-        for key in ("runtime_root", "repo_path", "bundle_manifest", "model_bundle_path", "history_index_path", "telemetry_path", "runtime_db"):
+        for key in (
+            "runtime_root", "repo_path", "bundle_manifest", "model_bundle_path", "history_index_path",
+            "telemetry_path", "primary_opportunity_path", "execution_diagnostic_path", "runtime_db",
+        ):
             if key in values and values[key]:
                 values[key] = _resolve_path(str(values[key]), base=base)
         required = (
             "bundle_manifest", "model_bundle_path", "history_index_path",
-            "telemetry_path", "runtime_db",
+            "telemetry_path", "primary_opportunity_path", "runtime_db",
         )
         missing = [name for name in required if not str(values.get(name, "")).strip()]
         if missing:
@@ -297,6 +340,32 @@ def _load_model(path: str | Path, bundle: ShadowBundle) -> ModelBundle:
     if actual != expected or actual != bundle.model_fingerprint:
         raise AuthorizationError("model artifact fingerprint does not match frozen bundle")
     return model
+
+
+def _validate_primary_source_contract(source: Path, config: ForwardRuntimeConfig) -> None:
+    """Không cho file execution-candidate cũ được bind làm primary source."""
+
+    if not config.has_explicit_primary_source:
+        raise AuthorizationError("primary_opportunity_path must be configured")
+    if config.telemetry_format.lower() not in {"jsonl", "ndjson"}:
+        raise AuthorizationError("primary opportunity source must be JSONL/NDJSON")
+    found = False
+    try:
+        with source.open("r", encoding="utf-8") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                payload = json.loads(line)
+                if not isinstance(payload, Mapping) or payload.get("schema_version") != config.primary_opportunity_schema:
+                    raise AuthorizationError("primary source contains a non-opportunity telemetry record")
+                found = True
+                return
+    except AuthorizationError:
+        raise
+    except (OSError, TypeError, ValueError) as exc:
+        raise AuthorizationError("primary opportunity source is not valid JSONL") from exc
+    if not found:
+        raise AuthorizationError("primary opportunity source is empty")
 
 
 def _similarity_config(bundle: ShadowBundle) -> dict[str, Any]:
@@ -452,6 +521,11 @@ class ForwardAuthorization:
     execution_mode: str = "NONE"
     live_execution_enabled: bool = False
     authorization_hash: str = ""
+    telemetry_observation_schema: str = ""
+    canonical_schema: str = ""
+    canonicalizer_version: str = ""
+    canonicalizer_fingerprint: str = ""
+    primary_source_identity: str = ""
 
     def material(self) -> dict[str, Any]:
         value = asdict(self)
@@ -508,9 +582,12 @@ def prepare_forward_authorization(
     git_sha = current_git_sha(config.repo_path)
     model = _load_model(config.model_bundle_path, bundle)
     load_history_index_artifact(config.history_index_path, bundle)
-    source = config.telemetry
+    if not config.has_explicit_primary_source:
+        raise AuthorizationError("primary_opportunity_path must be configured before authorization")
+    source = config.primary_opportunity
     if not source.is_file():
         raise AuthorizationError(f"telemetry source is unavailable: {source}")
+    _validate_primary_source_contract(source, config)
     source_identity = file_source_identity(source)
     db = connect_database(config.db)
     try:
@@ -539,6 +616,11 @@ def prepare_forward_authorization(
         "historical_reference_cutoff": bundle.historical_reference_cutoff_utc,
         "telemetry_schema": config.schema_version,
         "telemetry_source_identity": source_identity,
+        "telemetry_observation_schema": config.primary_opportunity_schema,
+        "canonical_schema": config.canonical_schema,
+        "canonicalizer_version": config.canonicalizer_version,
+        "canonicalizer_fingerprint": config.canonicalizer_fingerprint,
+        "primary_source_identity": source_identity,
         "model_fingerprint": bundle.model_fingerprint,
         "similarity_fingerprint": bundle.similarity_fingerprint,
         "runtime_db": str(config.db.resolve()),
@@ -572,6 +654,8 @@ def validate_forward_authorization(
     if authorization.authorization_hash != authorization.computed_hash():
         raise AuthorizationError("authorization hash mismatch")
     bundle = _load_bundle(config.bundle_manifest)
+    if not config.has_explicit_primary_source:
+        raise AuthorizationError("primary_opportunity_path must be configured before FORWARD validation")
     current_sha = current_git_sha(config.repo_path)
     if current_sha != authorization.authorized_git_sha:
         raise AuthorizationError("current HEAD differs from authorized git SHA")
@@ -587,6 +671,16 @@ def validate_forward_authorization(
         "similarity_fingerprint": bundle.similarity_fingerprint,
         "runtime_db": str(config.db.resolve()),
     }
+    if config.has_explicit_primary_source:
+        expected.update(
+            {
+                "telemetry_observation_schema": config.primary_opportunity_schema,
+                "canonical_schema": config.canonical_schema,
+                "canonicalizer_version": config.canonicalizer_version,
+                "canonicalizer_fingerprint": config.canonicalizer_fingerprint,
+                "primary_source_identity": authorization.telemetry_source_identity,
+            }
+        )
     for key, value in expected.items():
         if str(getattr(authorization, key)) != str(value):
             raise AuthorizationError(f"authorization {key} mismatch")
@@ -598,9 +692,10 @@ def validate_forward_authorization(
     model = _load_model(config.model_bundle_path, bundle)
     index = load_history_index_artifact(config.history_index_path, bundle)
     if check_source_identity:
-        if not config.telemetry.is_file():
+        source = config.primary_opportunity
+        if not source.is_file():
             raise AuthorizationError("telemetry source is unavailable")
-        if file_source_identity(config.telemetry) != authorization.telemetry_source_identity:
+        if file_source_identity(source) != authorization.telemetry_source_identity:
             raise AuthorizationError("telemetry source identity differs from authorization")
     return authorization, bundle, model, index
 
@@ -690,17 +785,55 @@ def _pid_alive(pid: Any) -> bool:
     return True
 
 
-def _db_runtime_status(config: ForwardRuntimeConfig, run_id: str | None) -> tuple[dict[str, Any] | None, int]:
+def _db_runtime_status(
+    config: ForwardRuntimeConfig,
+    run_id: str | None,
+) -> tuple[dict[str, Any] | None, int, dict[str, int]]:
     if not config.db.exists():
-        return None, 0
+        return None, 0, {
+            "raw_observation_count": 0,
+            "canonical_opportunity_count": 0,
+            "duplicate_collapse_count": 0,
+            "scorable_count": 0,
+            "no_opinion_count": 0,
+        }
     connection = connect_database(config.db)
     try:
         integrity = integrity_status(connection)
-        if run_id:
-            count = int(connection.execute("SELECT COUNT(*) FROM phase3_predictions WHERE forward_run_id = ?", (run_id,)).fetchone()[0])
-        else:
-            count = int(connection.execute("SELECT COUNT(*) FROM phase3_predictions WHERE forward_valid = 1").fetchone()[0])
-        return integrity, count
+        try:
+            where = " WHERE run_id = ?" if run_id else ""
+            params = (run_id,) if run_id else ()
+            raw_count = int(connection.execute("SELECT COUNT(*) FROM phase3_opportunity_observations" + where, params).fetchone()[0])
+            canonical = connection.execute(
+                """
+                SELECT COUNT(*), COALESCE(SUM(duplicate_observation_count), 0),
+                       COALESCE(SUM(CASE WHEN status = 'SCORABLE' THEN 1 ELSE 0 END), 0),
+                       COALESCE(SUM(CASE WHEN status = 'NO_OPINION' THEN 1 ELSE 0 END), 0)
+                FROM phase3_canonical_opportunities
+                """ + where,
+                params,
+            ).fetchone()
+            counters = {
+                "raw_observation_count": raw_count,
+                "canonical_opportunity_count": int(canonical[0]),
+                "duplicate_collapse_count": int(canonical[1]),
+                "scorable_count": int(canonical[2]),
+                "no_opinion_count": int(canonical[3]),
+            }
+            return integrity, counters["scorable_count"] + counters["no_opinion_count"], counters
+        except sqlite3.OperationalError:
+            # Runtime DB cũ trước migration 009 chỉ còn diagnostic count.
+            if run_id:
+                count = int(connection.execute("SELECT COUNT(*) FROM phase3_predictions WHERE forward_run_id = ?", (run_id,)).fetchone()[0])
+            else:
+                count = int(connection.execute("SELECT COUNT(*) FROM phase3_predictions WHERE forward_valid = 1").fetchone()[0])
+            return integrity, count, {
+                "raw_observation_count": 0,
+                "canonical_opportunity_count": 0,
+                "duplicate_collapse_count": 0,
+                "scorable_count": 0,
+                "no_opinion_count": 0,
+            }
     finally:
         connection.close()
 
@@ -736,15 +869,15 @@ def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = No
     process_alive = _pid_alive(heartbeat.get("pid"))
     collector_state = str(heartbeat.get("collector_status") or "").upper()
     collector_running = bool(fresh and process_alive and collector_state in {"RUNNING", "WAITING_FOR_SOURCE"})
-    db_integrity, sample_count = _db_runtime_status(config, selected_run_id)
-    telemetry_available = config.telemetry.is_file()
+    db_integrity, sample_count, coverage = _db_runtime_status(config, selected_run_id)
+    telemetry_available = config.primary_opportunity.is_file()
     offset = heartbeat.get("current_source_offset")
     if offset is None and config.db.exists():
         connection = connect_database(config.db)
         try:
             row = connection.execute(
                 "SELECT offset_bytes FROM phase3_ingest_offsets WHERE source_key = ?",
-                (str(config.telemetry.resolve()),),
+                (str(config.primary_opportunity.resolve()),),
             ).fetchone()
             if row:
                 offset = int(row[0])
@@ -761,7 +894,7 @@ def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = No
         "run_id": selected_run_id,
         "bundle_id": heartbeat.get("bundle_id"),
         "code_sha": heartbeat.get("git_sha"),
-        "telemetry_source": str(config.telemetry.resolve()),
+        "telemetry_source": str(config.primary_opportunity.resolve()),
         "telemetry_source_identity": heartbeat.get("source_identity"),
         "telemetry_available": telemetry_available,
         "telemetry_status": heartbeat.get("telemetry_status") or ("CONNECTED" if telemetry_available else "WAITING_FOR_SOURCE"),
@@ -769,6 +902,15 @@ def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = No
         "last_event": heartbeat.get("last_event"),
         "last_prediction": heartbeat.get("last_prediction"),
         "forward_sample_count": sample_count,
+        "raw_observation_count": coverage["raw_observation_count"],
+        "canonical_opportunity_count": coverage["canonical_opportunity_count"],
+        "duplicate_collapse_count": coverage["duplicate_collapse_count"],
+        "scorable_count": coverage["scorable_count"],
+        "no_opinion_count": coverage["no_opinion_count"],
+        "primary_source_schema": config.primary_opportunity_schema,
+        "canonical_schema": config.canonical_schema,
+        "canonicalizer_version": config.canonicalizer_version,
+        "canonicalizer_fingerprint": config.canonicalizer_fingerprint,
         "db_integrity": db_integrity,
         "live_execution_enabled": False,
         "execution_mode": "NONE",
@@ -846,7 +988,7 @@ class PersistentForwardCollector:
             "run_id": self.run_id,
             "bundle_id": self.bundle.bundle_id,
             "git_sha": self.authorization.authorized_git_sha,
-            "source_path": str(self.config.telemetry.resolve()),
+            "source_path": str(self.config.primary_opportunity.resolve()),
             "source_identity": source_identity,
             "initial_source_offset": initial_source_offset,
             "current_source_offset": current_source_offset,
@@ -862,7 +1004,7 @@ class PersistentForwardCollector:
         _atomic_json_write(self.config.heartbeat_path, payload)
 
     def _bind_source_boundary(self, runtime: Phase3Runtime) -> tuple[str, int] | None:
-        source = self.config.telemetry
+        source = self.config.primary_opportunity
         source_key = str(source.resolve())
         offset = runtime.connection.execute(
             "SELECT * FROM phase3_ingest_offsets WHERE source_key = ?", (source_key,)
@@ -941,9 +1083,10 @@ class PersistentForwardCollector:
         identity, initial_offset = boundary
         result = runtime.ingest_file_once(
             self.run_id,
-            self.config.telemetry,
+            self.config.primary_opportunity,
             source=self.config.telemetry_source,
             file_format=self.config.telemetry_format,
+            expected_schema=self.config.primary_opportunity_schema,
         )
         if result.get("truncated"):
             runtime.set_run_status(self.run_id, "FAILED")

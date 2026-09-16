@@ -25,7 +25,7 @@ python -m agent.phase3 status-runtime --runtime-config E:\build-bot-runtime\phas
 
 `freeze-bundle` reads the Phase 1/Phase 2 manifests and the local ignored Phase 2 model artifact when present. The reviewable manifest contains fingerprints and train-only preprocessing metadata, not the model payload. A model artifact and optional historical index can be supplied to replay/start-shadow through `--model-bundle` and `--history-json`.
 
-The telemetry contract is `phase3-live-telemetry/1`: closed-bar event-time features only, UTC timestamps, deterministic source IDs, and no outcome/future fields. Repeated source IDs are idempotent. File ingestion advances only across complete lines and detects rotation.
+The primary forward universe is the canonical opportunity contract: raw `phase3-opportunity-observation/1` records are captured at the closed-bar audit layer and canonicalized with the existing Phase 1 `canonical_opportunity_id` implementation into `phase3-canonical-opportunity/1`. The old `phase3-live-telemetry/1` / `EXECUTION_CANDIDATE` stream remains backward-compatible but is diagnostic-only; it is not used for `FORWARD_SAMPLE_COUNT`, predictive evaluation, or the 500-sample gate. Both contracts contain event-time features only, UTC timestamps, deterministic source IDs, and no outcome/future fields. Repeated source IDs are idempotent, and overlapping V81/V82 observations collapse to one canonical prediction. File ingestion advances only across complete lines and detects rotation.
 
 Forward outcomes are resolved only from bars strictly after both the event timestamp and prediction commit timestamp. Fixed metrics use predeclared baselines, deterministic block bootstrap, and never retrain or update the similarity reference.
 
@@ -61,12 +61,14 @@ Windows Task Scheduler helpers are in `scripts\phase3\`:
 
 Installation is disabled/stopped by default. The task is named `BuildBot-Phase3-Forward`, runs as the interactive user without a stored password, ignores concurrent instances, has no execution time limit, and is scoped to the collector process only. `run_forward_collector.ps1` resumes the persisted run marker after a restart; passing `-NewRun` intentionally starts a new authorized run.
 
-The MT5 side-channel writes one complete `phase3-live-telemetry/1` JSONL record to `FILE_COMMON` at:
+The MT5 side-channel writes the legacy diagnostic `phase3-live-telemetry/1` JSONL record to `FILE_COMMON` at:
 
 ```text
 <MT5 common data path>\Files\phase3\Mentor_RSI_MTF_<MagicNumber>_<Symbol>_<Timeframe>.jsonl
 ```
 
-The exporter is `void` and is called after the existing trade request returns; its file/open/write result is not used to gate entry, exit, risk, lot, SL, or TP behavior. Existing account/execution CSV telemetry is not the opportunity schema and is therefore not reused as the Phase 3 source.
+The primary opportunity observer writes a separate `phase3-opportunity-observation/1` JSONL stream under `phase3/opportunities/`. It is called from the independent V81/V82 closed-bar audit machinery before any execution suppression and uses a `void` side-effect-only API. Both exporters' file/open/write results are not used to gate entry, exit, risk, lot, SL, or TP behavior. Existing account/execution CSV telemetry is not the opportunity schema and is therefore not reused as the Phase 3 source.
+
+`ForwardRuntimeConfig.primary_opportunity_path` must point at the new opportunity stream before a future authorization can be prepared. The authorization contract records the raw schema, canonical schema, canonicalizer version/fingerprint, source identity, bundle, and code SHA; a legacy execution-candidate file cannot silently become the primary source.
 
 No authorization manifest is created unless the exact current Git SHA, frozen bundle/model/index, replay/smoke/database/one-way gates, and real telemetry source identity all pass. Synthetic or historical records never prove `MT5_TELEMETRY_STATUS=CONNECTED` or `FORWARD_COLLECTION_STATUS=ACTIVE`.

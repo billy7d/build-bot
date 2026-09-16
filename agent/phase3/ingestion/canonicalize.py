@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ...features.fingerprint import canonical_json
+from .opportunity import CanonicalOpportunity, OpportunityObservation, canonicalize_observation
 from ..models import TelemetryEvent, sha256_bytes, sha256_json
 
 
@@ -50,4 +51,38 @@ def canonicalize_event(event: TelemetryEvent) -> CanonicalForwardEvent:
     return CanonicalForwardEvent(forward_event_id, forward_opportunity_id, event)
 
 
-__all__ = ["CanonicalForwardEvent", "canonicalize_event", "derive_forward_ids"]
+def derive_canonical_forward_ids(run_id: str, canonical_opportunity_id: str) -> tuple[str, str]:
+    """Tạo event/prediction identity ổn định theo run và canonical opportunity."""
+
+    material = {
+        "run_id": str(run_id),
+        "canonical_opportunity_id": str(canonical_opportunity_id),
+    }
+    digest = sha256_json(material)
+    return f"p3-canonical-event-{digest}", f"p3-canonical-prediction-{digest}"
+
+
+def canonicalize_opportunity(
+    observation: OpportunityObservation,
+    *,
+    run_id: str | None = None,
+) -> tuple[CanonicalOpportunity, CanonicalForwardEvent]:
+    """Canonicalize raw opportunity qua cùng Phase 1 canonicalizer."""
+
+    evidence = canonicalize_observation(observation)
+    event_id, _ = derive_canonical_forward_ids(run_id or "unbound", evidence.canonical_opportunity_id)
+    telemetry = observation.to_telemetry_event()
+    return evidence, CanonicalForwardEvent(
+        event_id,
+        evidence.canonical_opportunity_id,
+        telemetry,
+    )
+
+
+__all__ = [
+    "CanonicalForwardEvent",
+    "canonicalize_event",
+    "canonicalize_opportunity",
+    "derive_canonical_forward_ids",
+    "derive_forward_ids",
+]

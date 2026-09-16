@@ -13,6 +13,7 @@ from unittest.mock import patch
 from agent.features.fingerprint import fingerprint
 from agent.phase3.forward import (
     AUTHORIZATION_SCHEMA,
+    ForwardControlError,
     ForwardAuthorization,
     ForwardRuntimeConfig,
     PersistentForwardCollector,
@@ -44,8 +45,45 @@ def _runtime_config(directory: Path) -> ForwardRuntimeConfig:
         history_index_path=str(directory / "history.json"),
         telemetry_path=str(directory / "telemetry.jsonl"),
         runtime_db=str(runtime_root / "db" / "forward.sqlite"),
+        primary_opportunity_path=str(directory / "opportunities.jsonl"),
+        execution_diagnostic_path=str(directory / "telemetry.jsonl"),
         poll_interval_seconds=0.01,
     )
+
+
+def _opportunity_payload(
+    source_observation_id: str,
+    *,
+    timestamp: str,
+    side: str = "LONG",
+    features: dict[str, object] | None = None,
+    entry_price: float = 100.0,
+) -> dict[str, object]:
+    """Tạo fixture primary đúng schema canonical opportunity, không dùng stream cũ."""
+
+    return {
+        "schema_version": "phase3-opportunity-observation/1",
+        "source_observation_id": source_observation_id,
+        "event_timestamp_utc": timestamp,
+        "emitted_at_utc": timestamp,
+        "source_strategy": "fixture-strategy",
+        "source_strategy_version": "fixture/1",
+        "symbol": "BTCUSD",
+        "timeframe": "H1",
+        "side": side,
+        "source_audit_family": "V81",
+        "source_event_type": "FLAT_LONG_ONLY" if side == "LONG" else "FLAT_SHORT_ONLY",
+        "bar_state": "closed_bar",
+        "candidate_type": "OPPORTUNITY_AUDIT",
+        "context": {"features": features or {}},
+        "execution_context": {"execution_eligible": False},
+        "entry_price": entry_price,
+        "hypothetical_entry_price": entry_price,
+        "risk_distance": 1.0,
+        "initial_sl_distance": 1.0,
+        "hypothetical_initial_sl": entry_price - 1.0 if side == "LONG" else entry_price + 1.0,
+        "build_valid": True,
+    }
 
 
 def _authorization(bundle: object, config: ForwardRuntimeConfig, *, sha: str = "test-sha") -> ForwardAuthorization:
@@ -100,6 +138,12 @@ class Phase31ContractTests(unittest.TestCase):
             json.dumps(artifact, ensure_ascii=False), encoding="utf-8"
         )
 
+    def test_primary_source_cannot_fallback_to_diagnostic_stream(self) -> None:
+        with TemporaryDirectory() as directory:
+            config = _runtime_config(Path(directory))
+            with self.assertRaisesRegex(ForwardControlError, "primary_opportunity_path"):
+                replace(config, primary_opportunity_path=None)
+
     def test_required_live_metadata_is_enforced(self) -> None:
         payload = _payload()
         payload.pop("emitted_at_utc")
@@ -142,8 +186,8 @@ class Phase31ContractTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             config = _runtime_config(root)
-            source = Path(config.telemetry_path)
-            source.write_text(json.dumps(_payload("historical"), separators=(",", ":")) + "\n", encoding="utf-8")
+            source = Path(config.primary_opportunity)
+            source.write_text(json.dumps(_opportunity_payload("historical", timestamp="2024-01-01T00:00:00Z"), separators=(",", ":")) + "\n", encoding="utf-8")
             auth = _authorization(self.bundle, config)
             db = connect_database(config.db)
             runtime = Phase3Runtime(
@@ -162,7 +206,7 @@ class Phase31ContractTests(unittest.TestCase):
             try:
                 first = collector.run_once()
                 self.assertEqual(first["records_seen"], 0)
-                live = _payload("live", timestamp="2024-01-01T00:00:01Z")
+                live = _opportunity_payload("live", timestamp="2024-01-01T00:00:01Z", entry_price=101.0)
                 with source.open("a", encoding="utf-8") as stream:
                     stream.write(json.dumps(live, separators=(",", ":")) + "\n")
                 accepted = collector.run_once()
@@ -177,7 +221,7 @@ class Phase31ContractTests(unittest.TestCase):
                 duplicate = restarted.run_once()
                 self.assertEqual(duplicate["records_seen"], 0)
                 source.write_text(
-                    json.dumps(_payload("rotated", timestamp="2024-01-01T00:00:02Z"), separators=(",", ":")) + "\n",
+                    json.dumps(_opportunity_payload("rotated", timestamp="2024-01-01T00:00:02Z", entry_price=102.0), separators=(",", ":")) + "\n",
                     encoding="utf-8",
                 )
                 rotated = restarted.run_once()
@@ -195,8 +239,8 @@ class Phase31ContractTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             config = _runtime_config(root)
-            source = Path(config.telemetry_path)
-            source.write_text(json.dumps(_payload("old"), separators=(",", ":")) + "\n", encoding="utf-8")
+            source = Path(config.primary_opportunity)
+            source.write_text(json.dumps(_opportunity_payload("old", timestamp=CLOCK), separators=(",", ":")) + "\n", encoding="utf-8")
             auth = _authorization(self.bundle, config)
             runtime = Phase3Runtime.open(
                 config.db,
@@ -248,7 +292,24 @@ class Phase31ContractTests(unittest.TestCase):
             root = Path(directory)
             config = _runtime_config(root)
             self._write_assets(root, config)
-            Path(config.telemetry_path).write_text(json.dumps(_payload("warmup")) + "\n", encoding="utf-8")
+            primary_payload = _payload("warmup")
+            primary_payload.update(
+                {
+                    "schema_version": "phase3-opportunity-observation/1",
+                    "source_observation_id": "warmup-opportunity",
+                    "source_audit_family": "V81",
+                    "source_event_type": "FLAT_LONG_ONLY",
+                    "execution_context": {"execution_eligible": False},
+                    "entry_price": 100.0,
+                    "hypothetical_entry_price": 100.0,
+                    "risk_distance": 1.0,
+                    "initial_sl_distance": 1.0,
+                    "hypothetical_initial_sl": 99.0,
+                    "build_valid": True,
+                }
+            )
+            config = replace(config, primary_opportunity_path=str(root / "opportunities.jsonl"))
+            Path(config.primary_opportunity).write_text(json.dumps(primary_payload) + "\n", encoding="utf-8")
             write_forward_config(config, root / "forward.json")
             with self.assertRaises(Exception):
                 validate_forward_authorization(root / "missing-authorization.json", config)
