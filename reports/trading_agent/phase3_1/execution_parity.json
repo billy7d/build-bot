@@ -3,7 +3,7 @@
   "status": "NOT_VERIFIED",
   "branch": "feature/trading-agent-phase3-canonical-telemetry",
   "base_sha": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
-  "head_sha": "c6e254b3ddae6816d83e76a02f82e8de4a2a446d",
+  "head_sha": "646ab9738557ef6e4bf92958764bad1a6965e374",
   "baseline_artifact": {
     "role": "original EA at main base revision",
     "source_commit": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
@@ -60,12 +60,15 @@
   "sanity_run": {
     "status": "UNAVAILABLE",
     "report_created": false,
-    "attempt_count": 3,
+    "attempt_count": 4,
     "latest_config": "outputs/build/phase3-canonical-sanity.ini",
     "latest_terminal_log": "outputs/build/mt5-latest/logs/20260916.log",
     "expected_report": "outputs/build/mt5-latest/reports/codex/phase3_canonical_sanity.html",
+    "latest_failure_at": "2026-09-16T11:45:44+07:00",
+    "latest_failure": "MQL5.community authorization failed; no authorized or terminal synchronized event observed",
     "reason": "portable terminal was not synchronized with the trade server"
   },
+  "mt5_session_status": "BLOCKED",
   "root_cause_classification": "ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR",
   "baseline_result": null,
   "candidate_result": null,

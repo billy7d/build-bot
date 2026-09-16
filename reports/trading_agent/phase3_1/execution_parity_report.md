@@ -9,7 +9,7 @@
 
 Base: `6c3b9574f962f55bfb01e168f70eef0cad5e029c`
 
-Candidate head: `c6e254b3ddae6816d83e76a02f82e8de4a2a446d`
+Candidate branch head at the latest evidence update: `646ab9738557ef6e4bf92958764bad1a6965e374`
 
 The parity participants are defined but were not executed in this revision:
 
@@ -34,9 +34,9 @@ same-environment run.
 
 ## Tester attempt and required comparison
 
-The minimal sanity config was submitted three times. The latest run used the
+The minimal sanity config was submitted four times. The latest run used the
 audited config with explicit Login/Server, `AllowLiveTrading=0`, and MT5-native
-single-separator paths. All three runs logged:
+single-separator paths. The earlier three runs logged:
 
 ```text
 Network: no connection to Exness-MT5Real15
@@ -45,12 +45,16 @@ Tester: terminal is not synchronized with the trade server before start automati
 MQL5.community: authorization failed
 ```
 
-No report file was created. The exact environment requirement is a synchronized
+No report file was created. A fresh fourth invocation after the manual-login
+report still logged `MQL5.community authorization failed` and produced no
+`authorized` or `terminal synchronized` event in the portable log. The exact
+environment requirement is a synchronized
 portable terminal session with the cached `BTCUSD/H1` history available; then rerun
-sanity followed by V26 and V63 baseline/candidate runs. The latest run still
-logged `no connection to Exness-MT5Real15`, `authorization failed`, and
-`terminal is not synchronized with the trade server`, so this remains an
-environment/account-state blocker rather than a comparator or strategy result.
+sanity followed by V26 and V63 baseline/candidate runs. The preceding tester
+startup logged `no connection to Exness-MT5Real15` and `terminal is not
+synchronized with the trade server`; the fresh fourth invocation logged
+`authorization failed`. This remains an environment/account-state blocker rather
+than a comparator or strategy result.
 
 The parity run must compare signal count/timestamps/side, order count/timestamps/
 type, entry/lot/SL/TP, acceptance or rejection, gate decisions, and position
