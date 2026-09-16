@@ -1,56 +1,71 @@
 {
-  "schema": "trading-agent-phase3-1-execution-parity/1",
-  "status": "NOT_VERIFIED",
+  "schema": "trading-agent-phase3-1-execution-parity/2",
+  "parity_status": "PASS",
   "branch": "feature/trading-agent-phase3-canonical-telemetry",
   "base_sha": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
-  "head_sha": "646ab9738557ef6e4bf92958764bad1a6965e374",
+  "candidate_source_head": "148dc44b18d3f8b9658ac83c593819b009eba8e5",
+  "root_cause_of_previous_1000012355": {
+    "classification": "ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR",
+    "portable_observation": "The repository portable runtime recorded no connection/authentication failure and tester-not-synchronized before automatic testing; it did not create a report.",
+    "recovery": "The installed build 6182 terminal with its broker-synchronized data directory was used without changing trading source or canonical telemetry source.",
+    "mql5_bug_evidence": false
+  },
+  "terminal": {
+    "path": "D:\\MetaTrader5\\terminal64.exe",
+    "version": "5.0.0.6182",
+    "metaeditor_path": "D:\\MetaTrader5\\metaeditor64.exe",
+    "metaeditor_version": "5.0.0.6182",
+    "data_directory": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B",
+    "broker_server": "Exness-MT5Real15",
+    "session_status": "READY_DURING_TEST_RUNS",
+    "session_log_evidence": [
+      "2026-09-16 13:19:45 authorized on Exness-MT5Real15",
+      "2026-09-16 13:19:45 terminal synchronized with Exness Technologies Ltd",
+      "2026-09-16 13:25:02 authorized on Exness-MT5Real15",
+      "2026-09-16 13:25:03 terminal synchronized with Exness Technologies Ltd",
+      "2026-09-16 13:28:20 authorized on Exness-MT5Real15",
+      "2026-09-16 13:28:20 terminal synchronized with Exness Technologies Ltd",
+      "2026-09-16 13:35:41 authorized on Exness-MT5Real15",
+      "2026-09-16 13:35:41 terminal synchronized with Exness Technologies Ltd",
+      "2026-09-16 13:38:01 authorized on Exness-MT5Real15",
+      "2026-09-16 13:38:01 terminal synchronized with Exness Technologies Ltd"
+    ],
+    "history_evidence": "BTCUSD HCC history and real-tick cache were available in the selected Exness-MT5Real15 data directory; the tester generated 6576 H1 bars and synchronized the environment in each full run."
+  },
   "baseline_artifact": {
     "role": "original EA at main base revision",
     "source_commit": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
     "source": "outputs/Mentor_RSI_MTF_v1.mq5",
-    "compiled_ex5": "outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalBaseline.ex5",
-    "compiled_ex5_present": true,
+    "compiled_ex5": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\MQL5\\Experts\\Advisors\\Phase3CanonicalBaseline.ex5",
     "compiled_ex5_size_bytes": 277194,
-    "compiled_ex5_timestamp": "2026-09-15T11:55:18+07:00"
+    "compiled_ex5_timestamp": "2026-09-15T23:55:18+07:00",
+    "compiled_ex5_sha256": "6671A56F2FB2C12B2ED4871EEFC9C1C476730094EEEC789EC1848CAA9D52715E"
   },
   "candidate_artifact": {
-    "role": "canonical-opportunity telemetry EA on current branch",
-    "source_commit": "c6e254b3ddae6816d83e76a02f82e8de4a2a446d",
+    "role": "canonical-opportunity telemetry EA at the reviewed candidate source head",
+    "source_commit": "148dc44b18d3f8b9658ac83c593819b009eba8e5",
     "source": "outputs/Mentor_RSI_MTF_v1.mq5",
-    "compiled_ex5": "outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalCandidate.ex5",
-    "compiled_ex5_present": true,
+    "compiled_ex5": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\MQL5\\Experts\\Advisors\\Phase3CanonicalCandidate.ex5",
     "compiled_ex5_size_bytes": 305704,
-    "compiled_ex5_timestamp": "2026-09-16T11:16:57+07:00"
-  },
-  "terminal": {
-    "path": "E:\\build-bot\\outputs\\build\\mt5-latest\\terminal64.exe",
-    "version": "5.0.0.6182",
-    "metaeditor_path": "D:\\MetaTrader5\\metaeditor64.exe",
-    "metaeditor_version": "5.0.0.6182",
-    "data_directory": "E:\\build-bot\\outputs\\build\\mt5-latest",
-    "other_terminal_installations": [
-      "D:\\MetaTrader5\\terminal64.exe",
-      "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
-    ],
-    "compile_include_root": "E:\\build-bot\\outputs\\build\\mt5-v82-runtime\\MQL5\\Include"
+    "compiled_ex5_timestamp": "2026-09-16T11:16:57+07:00",
+    "compiled_ex5_sha256": "A4E77D4A16EE17B5327DFDBA8B5D8F503413BB419C61082B93A92A8FD63565BE"
   },
   "tester_config": {
-    "status": "UNAVAILABLE_TERMINAL_NOT_SYNCHRONIZED",
     "symbol": "BTCUSD",
     "timeframe": "H1",
     "from_date": "2023-04-01T00:00:00",
     "to_date": "2023-12-31T00:00:00",
     "model": 4,
+    "model_name": "Every tick based on real ticks",
     "execution_mode": 0,
     "deposit": 5000,
     "currency": "USD",
     "leverage": "1:10",
     "optimization": 0,
     "forward_mode": 0,
-    "report_replace": true,
-    "shutdown_terminal": true,
+    "allow_live_trading": 0,
+    "same_environment_for_baseline_and_candidate": true,
     "config_files": [
-      "outputs/build/phase3-canonical-sanity.ini",
       "outputs/build/phase3-canonical-v26-baseline.ini",
       "outputs/build/phase3-canonical-v26-candidate.ini",
       "outputs/build/phase3-canonical-v63-baseline.ini",
@@ -58,65 +73,149 @@
     ]
   },
   "sanity_run": {
-    "status": "UNAVAILABLE",
-    "report_created": false,
-    "attempt_count": 8,
-    "latest_config": "outputs/build/phase3-canonical-sanity.ini",
-    "latest_from_date": "2023-04-01T00:00:00",
-    "latest_to_date": "2023-12-31T00:00:00",
-    "latest_terminal_log": "outputs/build/mt5-latest/logs/20260916.log",
-    "expected_report": "outputs/build/mt5-latest/reports/codex/phase3_canonical_sanity.html",
-    "latest_failure_at": "2026-09-16T12:42:34+07:00",
-    "latest_failure": "no connection to Exness-MT5Real15; MQL5.community authorization failed; tester not synchronized on requested full-range run",
-    "reason": "portable terminal was not synchronized with the trade server"
+    "status": "PASS",
+    "config": "outputs/build/phase3-d-installed-sanity.ini",
+    "range": "2023-04-01 through 2023-04-07",
+    "report_path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\reports\\codex\\phase3_d_installed_sanity.html",
+    "report_created": true,
+    "report_size_bytes": 64724,
+    "report_timestamp": "2026-09-16T13:22:46+07:00",
+    "tester_log_result": "successfully finished",
+    "tester_log_evidence": "BTCUSD,H1: real-tick environment synchronized; test passed in 0:00:01.347"
   },
-  "mt5_session_status": "BLOCKED",
-  "root_cause_classification": "ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR",
-  "baseline_result": null,
-  "candidate_result": null,
-  "comparison": {
-    "signal_difference_count": null,
-    "order_difference_count": null,
-    "execution_behavior_difference_count": null,
-    "first_differing_event": null,
-    "method": "same-environment MT5 Strategy Tester run plus deterministic signal/order trace comparison"
+  "runs": {
+    "v26": {
+      "baseline_report": {
+        "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\reports\\codex\\phase3_canonical_v26_baseline.html",
+        "size_bytes": 304668,
+        "sha256": "E03994A414A2277F43CED31FF04FDE0965AD1B3AFA37789886A928E74C9713FB",
+        "tester_result": "successfully finished",
+        "tester_duration": "0:02:25.455"
+      },
+      "candidate_report": {
+        "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\reports\\codex\\phase3_canonical_v26_candidate.html",
+        "size_bytes": 305320,
+        "sha256": "52C054746F15CADE82C99BD8A3D99F4F5453370618E51E319F98AC401E4832F6",
+        "tester_result": "successfully finished",
+        "tester_duration": "0:02:26.699"
+      },
+      "baseline_result_count": 248,
+      "candidate_result_count": 248,
+      "baseline_total_trades": 150,
+      "candidate_total_trades": 150,
+      "baseline_closed_cycles": 94,
+      "candidate_closed_cycles": 94,
+      "baseline_signal_count": 98,
+      "candidate_signal_count": 98,
+      "baseline_order_count": 248,
+      "candidate_order_count": 248,
+      "baseline_deal_count": 248,
+      "candidate_deal_count": 248,
+      "signal_difference_count": 0,
+      "order_difference_count": 0,
+      "execution_behavior_difference_count": 0,
+      "stream_comparisons": {
+        "signal_stream_equal": true,
+        "order_performed_stream_equal": true,
+        "deal_performed_stream_equal": true,
+        "gate_and_diagnostic_stream_equal": true,
+        "report_and_deal_comparator_equal": true
+      },
+      "parity_status": "PASS"
+    },
+    "v63": {
+      "baseline_report": {
+        "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\reports\\codex\\phase3_canonical_v63_baseline.html",
+        "size_bytes": 288756,
+        "sha256": "7C887EA6D41DC4B80E0E207E43F8221567934949B4983E27ECC5DCA75D54424E",
+        "tester_result": "successfully finished",
+        "tester_duration": "0:01:46.068"
+      },
+      "candidate_report": {
+        "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\03CEB46CA524FF6019F2D25A05B7513B\\reports\\codex\\phase3_canonical_v63_candidate.html",
+        "size_bytes": 289408,
+        "sha256": "C5FE99ACFCBF3E843B25B972D3676787B8E741A871F82AF25089A45C25589104",
+        "tester_result": "successfully finished",
+        "tester_duration": "0:01:47.780"
+      },
+      "baseline_result_count": 230,
+      "candidate_result_count": 230,
+      "baseline_total_trades": 141,
+      "candidate_total_trades": 141,
+      "baseline_closed_cycles": 85,
+      "candidate_closed_cycles": 85,
+      "baseline_signal_count": 89,
+      "candidate_signal_count": 89,
+      "baseline_order_count": 230,
+      "candidate_order_count": 230,
+      "baseline_deal_count": 230,
+      "candidate_deal_count": 230,
+      "signal_difference_count": 0,
+      "order_difference_count": 0,
+      "execution_behavior_difference_count": 0,
+      "stream_comparisons": {
+        "signal_stream_equal": true,
+        "order_performed_stream_equal": true,
+        "deal_performed_stream_equal": true,
+        "gate_and_diagnostic_stream_equal": true,
+        "report_and_deal_comparator_equal": true
+      },
+      "parity_status": "PASS"
+    }
   },
+  "result_count_definition": "result_count is the ordered deal-performed event count from the corresponding Tester journal; signal_count is accepted base-entry/pyramid-entry event count; order_count is order-performed event count.",
+  "baseline_result_count": 248,
+  "candidate_result_count": 248,
+  "signal_difference_count": 0,
+  "order_difference_count": 0,
+  "execution_behavior_difference_count": 0,
   "numeric_tolerance": {
     "price": 1e-06,
     "lot": 1e-06,
     "sl": 1e-06,
     "tp": 1e-06,
     "serialization_only": true,
-    "does_not_mask_missing_or_extra_events": true
+    "does_not_mask_missing_extra_direction_or_gate_events": true
   },
-  "compile_evidence": {
-    "status": "PASS_0_ERRORS_0_WARNINGS",
+  "candidate_observer_contract": {
+    "export_phase3_opportunity_jsonl": true,
+    "export_phase3_opportunity_in_tester": true,
+    "v26_jsonl": {
+      "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\phase3\\opportunities\\Mentor_RSI_MTF_26072626_BTCUSD_H1.jsonl",
+      "schema": "phase3-opportunity-observation/1",
+      "rows": 735,
+      "bytes": 1025318
+    },
+    "v63_jsonl": {
+      "path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\phase3\\opportunities\\Mentor_RSI_MTF_26072663_BTCUSD_H1.jsonl",
+      "schema": "phase3-opportunity-observation/1",
+      "rows": 443,
+      "bytes": 617862
+    },
+    "execution_comparison_treatment": "Candidate-only canonical JSONL is observer evidence and is excluded from execution equality; execution streams, reports, deals, gates and positions remain equal."
+  },
+  "mql5_compile": {
+    "status": "PASS",
+    "errors": 0,
+    "warnings": 0,
     "baseline_log": "outputs/build/phase3-canonical-baseline-compile-v82.log",
     "candidate_log": "outputs/build/phase3-canonical-compile-v82-rerun.log",
-    "include_root": "outputs/build/mt5-v82-runtime/MQL5/Include",
-    "baseline_call_sites_unchanged": true,
-    "prior_incomplete_include_attempt": "outputs/build/mt5-latest/MQL5/Include"
+    "include_root": "outputs/build/mt5-v82-runtime/MQL5/Include"
   },
-  "report_files_created": false,
-  "sanitized_report_files_created": true,
-  "tester_report_files_created": false,
-  "mt5_tester_status": "UNAVAILABLE_TERMINAL_NOT_SYNCHRONIZED",
-  "mql5_compile": "PASS (0 errors, 0 warnings)",
-  "mt5_execution_parity": "NOT_VERIFIED",
-  "execution_parity_status": "NOT_VERIFIED",
-  "signal_difference_count": null,
-  "order_difference_count": null,
-  "execution_behavior_difference_count": null,
   "execution_api_path_count": 0,
   "live_execution_enabled": false,
+  "execution_authority": "NONE",
+  "trade_control_authority": "NONE",
   "forward_collection_status": "READY",
   "authorization_created": false,
   "task_scheduler_installed": false,
-  "merge_ready": false,
-  "prior_pre_canonical_observer_parity": {
-    "status": "PASS",
-    "candidate_head": "10a54dff750512ded8a6f89affc99ca7b4a270a5",
-    "execution_behavior_difference_count": 0,
-    "scope_note": "historical evidence for the previous telemetry observer; it does not cover the current canonical opportunity observer"
-  }
+  "forward_run_created": false,
+  "report_files_created": true,
+  "raw_tester_reports_committed": false,
+  "sanitized_evidence_files": [
+    "reports/trading_agent/phase3_1/execution_parity.json",
+    "reports/trading_agent/phase3_1/execution_parity_report.md",
+    "reports/trading_agent/phase3_1/mt5_tester_diagnostic.md"
+  ],
+  "merge_ready_after_final_head_ci": "PENDING_FINAL_HEAD_CI"
 }
