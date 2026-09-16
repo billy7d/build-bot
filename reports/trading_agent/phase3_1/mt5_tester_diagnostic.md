@@ -9,7 +9,7 @@
 - `FORWARD_COLLECTION_STATUS`: `READY`
 - `ROOT_CAUSE_CLASSIFICATION`: `ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR`
 
-The tester sanity run was attempted four times. The third attempt used the
+The tester sanity run was attempted six times. The third attempt used the
 corrected MT5 config shape (`[Common]` Login/Server, `[Experts]`
 `AllowLiveTrading=0`, single-separator EA/report paths), but it still failed to
 synchronize. The original-vs-telemetry parity run was not started because no
@@ -65,9 +65,10 @@ incomplete-library mismatch; it was not used for the tester artifacts.
 
 The sanity config used `BTCUSD`, `H1`, model `4`, `2023.04.01` through `2023.04.07`,
 deposit `5000 USD`, leverage `1:10`, `ExecutionMode=0`, no optimization, no forward
-mode, `UseLocal=1`, and `ShutdownTerminal=1`. Four attempts produced no report;
-the latest two launches used `outputs/build/phase3-canonical-sanity.ini` after the
-config audit. The portable log recorded:
+mode, `UseLocal=1`, and `ShutdownTerminal=1`. All six launches produced no
+report; the latest portable launch used
+`outputs/build/phase3-canonical-sanity.ini` after the config audit. The portable
+log recorded:
 
 ```text
 Network '103455393': no connection to Exness-MT5Real15
@@ -77,7 +78,7 @@ Tester: terminal is not synchronized with the trade server before start automati
 Tester: automatic testing started
 ```
 
-The latest attempt after the manual-login report also used the expected
+An earlier corrected attempt after the manual-login report also used the expected
 Login/Server and live-trading-disabled sections, but logged the same failure
 sequence in `logs/20260916.log`:
 
@@ -90,10 +91,21 @@ sequence in `logs/20260916.log`:
 ```
 
 The fresh fourth invocation recorded `11:45:44 MQL5.community authorization
-failed`, created no report, and produced no `authorized` or `terminal
-synchronized` event in the portable log. The active GUI title showing the
-expected account/server is not sufficient evidence that the tester process has
-a synchronized trade-server session.
+failed`. The subsequent `/portable` invocation at 11:56 started the tester but
+recorded the same account/session failure:
+
+```text
+11:56:44 Network '103455393': no connection to Exness-MT5Real15
+11:56:44 MQL5.community authorization failed
+11:57:32 Tester not synchronized with trade server
+11:57:33 Tester terminal is not synchronized with the trade server before start automatic testing [1]
+11:57:33 Tester automatic testing started
+```
+
+It created no report and produced no `authorized` or `terminal synchronized`
+event in the portable log. The active GUI title showing the expected
+account/server is not sufficient evidence that the tester process has a
+synchronized trade-server session.
 
 The expected writable report path was
 `E:\build-bot\outputs\build\mt5-latest\reports\codex\phase3_canonical_sanity.html`;
