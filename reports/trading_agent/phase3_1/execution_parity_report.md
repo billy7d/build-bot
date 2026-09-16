@@ -34,7 +34,7 @@ same-environment run.
 
 ## Tester attempt and required comparison
 
-The minimal sanity config was submitted seven times. The latest `/portable` run used the
+The minimal sanity config was submitted eight times. The latest `/portable` run used the
 audited config with explicit Login/Server, `AllowLiveTrading=0`, and MT5-native
 single-separator paths. The earlier three runs logged:
 
@@ -58,6 +58,9 @@ same `no connection`, `authorization failed`, and `not synchronized` sequence
 before automatic testing. After a manual login and full exit, the seventh
 `/portable` invocation at 12:10 reproduced the same sequence. This remains an
 environment/account-state blocker rather than a comparator or strategy result.
+The eighth `/portable` invocation used the requested full-range dates
+`2023-04-01` through `2023-12-31` and reproduced the same sequence before
+automatic testing.
 
 The parity run must compare signal count/timestamps/side, order count/timestamps/
 type, entry/lot/SL/TP, acceptance or rejection, gate decisions, and position

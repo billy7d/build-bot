@@ -9,7 +9,7 @@
 - `FORWARD_COLLECTION_STATUS`: `READY`
 - `ROOT_CAUSE_CLASSIFICATION`: `ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR`
 
-The tester sanity run was attempted seven times. The third attempt used the
+The tester sanity run was attempted eight times. The third attempt used the
 corrected MT5 config shape (`[Common]` Login/Server, `[Experts]`
 `AllowLiveTrading=0`, single-separator EA/report paths), but it still failed to
 synchronize. The original-vs-telemetry parity run was not started because no
@@ -63,9 +63,9 @@ incomplete-library mismatch; it was not used for the tester artifacts.
 
 ## Tester evidence
 
-The sanity config used `BTCUSD`, `H1`, model `4`, `2023.04.01` through `2023.04.07`,
+The latest sanity config used `BTCUSD`, `H1`, model `4`, `2023.04.01` through `2023.12.31`,
 deposit `5000 USD`, leverage `1:10`, `ExecutionMode=0`, no optimization, no forward
-mode, `UseLocal=1`, and `ShutdownTerminal=1`. All seven launches produced no
+mode, `UseLocal=1`, and `ShutdownTerminal=1`. All eight launches produced no
 report; the latest portable launch used
 `outputs/build/phase3-canonical-sanity.ini` after the config audit. The portable
 log recorded:
@@ -111,6 +111,17 @@ seventh `/portable` invocation reproduced the same failure:
 12:11:40 Tester not synchronized with trade server
 12:11:40 Tester terminal is not synchronized with the trade server before start automatic testing [1]
 12:11:40 Tester automatic testing started
+```
+
+The eighth `/portable` invocation used the requested full-range sanity dates
+(`2023.04.01` through `2023.12.31`) and reproduced the same failure:
+
+```text
+12:41:45 Network '103455393': no connection to Exness-MT5Real15
+12:41:45 MQL5.community authorization failed
+12:42:34 Tester not synchronized with trade server
+12:42:34 Tester terminal is not synchronized with the trade server before start automatic testing [1]
+12:42:34 Tester automatic testing started
 ```
 
 It created no report and produced no `authorized` or `terminal synchronized`
