@@ -60,12 +60,12 @@
   "sanity_run": {
     "status": "UNAVAILABLE",
     "report_created": false,
-    "attempt_count": 6,
+    "attempt_count": 7,
     "latest_config": "outputs/build/phase3-canonical-sanity.ini",
     "latest_terminal_log": "outputs/build/mt5-latest/logs/20260916.log",
     "expected_report": "outputs/build/mt5-latest/reports/codex/phase3_canonical_sanity.html",
-    "latest_failure_at": "2026-09-16T11:57:33+07:00",
-    "latest_failure": "no connection to Exness-MT5Real15; MQL5.community authorization failed; tester not synchronized",
+    "latest_failure_at": "2026-09-16T12:11:40+07:00",
+    "latest_failure": "no connection to Exness-MT5Real15; MQL5.community authorization failed; tester not synchronized after manual login and full exit",
     "reason": "portable terminal was not synchronized with the trade server"
   },
   "mt5_session_status": "BLOCKED",

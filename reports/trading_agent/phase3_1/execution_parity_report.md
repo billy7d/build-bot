@@ -34,7 +34,7 @@ same-environment run.
 
 ## Tester attempt and required comparison
 
-The minimal sanity config was submitted six times. The latest `/portable` run used the
+The minimal sanity config was submitted seven times. The latest `/portable` run used the
 audited config with explicit Login/Server, `AllowLiveTrading=0`, and MT5-native
 single-separator paths. The earlier three runs logged:
 
@@ -55,8 +55,9 @@ startup logged `no connection to Exness-MT5Real15` and `terminal is not
 synchronized with the trade server`; the fresh fourth invocation logged
 `authorization failed`. The sixth `/portable` invocation at 11:56 produced the
 same `no connection`, `authorization failed`, and `not synchronized` sequence
-before automatic testing. This remains an environment/account-state blocker
-rather than a comparator or strategy result.
+before automatic testing. After a manual login and full exit, the seventh
+`/portable` invocation at 12:10 reproduced the same sequence. This remains an
+environment/account-state blocker rather than a comparator or strategy result.
 
 The parity run must compare signal count/timestamps/side, order count/timestamps/
 type, entry/lot/SL/TP, acceptance or rejection, gate decisions, and position
