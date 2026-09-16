@@ -1,25 +1,104 @@
 {
   "report_schema": "phase3-forward-node-ops-status/1",
+  "pr_url": "https://github.com/billy7d/build-bot/pull/6",
   "base_sha": "b6042bc4055931092b190a1e57af0798e1a96189",
   "branch": "feature/trading-agent-forward-node-ops-handoff",
+  "initial_candidate_head": "f671f709c5bd9820c8f9de7a3dece9a526e4f379",
+  "head_at_evidence_generation": "f671f709c5bd9820c8f9de7a3dece9a526e4f379",
   "code_implementation_status": "PASS",
-  "clean_windows_bootstrap_status": "NOT_RUN",
-  "artifact_integrity_status": "TEST_ONLY_PASS_PRODUCTION_PACKAGE_NOT_CREATED",
+  "frozen_contract": {
+    "bundle_id": "p3-bundle-577e5dfd0702c52c8f5318063703dd616a633704444ba5371e1c74e6dc080c6a",
+    "historical_reference_cutoff_utc": "2023-12-30T08:00:00Z",
+    "phase1_dataset_fingerprint": "2dc6dcd74928ed00923fd21f032ba0700f1c9c50459c9e0159872aa2045680ff",
+    "canonicalizer_fingerprint": "0770ab50bf8509df0443468a9e2fbc0d1450b1c0cd167f56d426538f2b916892"
+  },
+  "artifact_inventory_status": "BLOCKED_EXTERNAL_INPUT",
+  "artifact_inventory": {
+    "phase3_bundle_manifest": {
+      "status": "AVAILABLE_VERIFIED",
+      "path": "reports/trading_agent/phase3/shadow_bundle_manifest.json",
+      "sha256": "371076fa51d5150667164c293a3a57c6ef5f02466f4030a34fc641a83f4b491f",
+      "bundle_id": "p3-bundle-577e5dfd0702c52c8f5318063703dd616a633704444ba5371e1c74e6dc080c6a"
+    },
+    "phase2_model_bundle": {
+      "status": "AVAILABLE_VERIFIED_CONTRACT_LOCAL_ONLY",
+      "path": "reports/trading_agent/phase2/model_bundle.json",
+      "sha256": "36bcdbeb69694f45ec46d83a2c946dbebf935db3f2046b1684cead9655606c31",
+      "model_payload_fingerprint": "398368efdc4867845a0b4880308fe0ff61297463177aa6ee11a7c8f7e4ace5f8",
+      "dataset_fingerprint": "2dc6dcd74928ed00923fd21f032ba0700f1c9c50459c9e0159872aa2045680ff",
+      "provenance": "local_git_ignored_artifact; not independently approved for packaging"
+    },
+    "phase2_model_manifest": {
+      "status": "AVAILABLE_VERIFIED",
+      "path": "reports/trading_agent/phase2/model_manifest.json",
+      "sha256": "7da19db388671d72a8dca7c2becd05e042d55b23245a41f1162931e72fcc41ca"
+    },
+    "historical_similarity_index": {
+      "status": "MISSING",
+      "expected_schema": "phase3-historical-similarity-index/1",
+      "required_contract": "bundle_id + Phase 1 fingerprint + frozen cutoff + similarity fingerprint + non-empty rows",
+      "substitute_rejected": "reports/trading_agent/phase2/similarity_results.json is validation output, not the frozen index artifact"
+    },
+    "similarity_results": {
+      "status": "AVAILABLE_UNVERIFIED_NOT_INDEX_ARTIFACT",
+      "path": "reports/trading_agent/phase2/similarity_results.json",
+      "sha256": "46f43b6c13b56e62e2f577e9b97d36ac0abca0dfcdaf331423e0a34595d86184",
+      "size_bytes": 21936708
+    },
+    "ea_target": {
+      "status": "BLOCKED_EXTERNAL_INPUT",
+      "candidates_present_but_not_approved": [
+        "outputs/Mentor_RSI_MTF_v1.ex5",
+        "outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalBaseline.ex5",
+        "outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalCandidate.ex5",
+        "outputs/build/phase3-canonical-v26-telemetry.set",
+        "outputs/build/phase3-canonical-v63-telemetry.set"
+      ],
+      "reason": "operator has not selected and independently approved the production EA/preset pair"
+    }
+  },
+  "production_package_status": "NOT_CREATED",
+  "detached_attestation_status": "PENDING_OPERATOR",
+  "package_sha256": "NOT_CREATED",
+  "clean_windows_host": "NOT_AVAILABLE",
+  "clean_windows_bootstrap_status": "BLOCKED_NO_WINDOWS_HOST",
+  "windows_host_observation": {
+    "current_host_is_clean": false,
+    "current_host_os": "Windows 10 Pro 25H2 build 26200.9457",
+    "python": "3.11.9",
+    "powershell": "7.6.5 Core",
+    "git": "2.54.0.windows.1",
+    "acceptance_use": "not_eligible; existing checkout, outputs and MT5 state are present"
+  },
+  "mt5_preflight_status": "BLOCKED_NO_OPERATOR_APPROVED_MT5_ACCEPTANCE_ENVIRONMENT",
+  "windows_lock_test": "NOT_RUN",
+  "windows_logoff_test": "NOT_RUN",
+  "windows_reboot_test": "NOT_RUN",
+  "windows_test_status": "NOT_RUN",
   "handoff_status": "TEST_ONLY_PASS",
   "backup_status": "TEST_ONLY_PASS",
   "restore_drill_status": "TEST_ONLY_PASS",
   "agent_takeover_status": "TEST_ONLY_PASS",
-  "windows_test_status": "NOT_RUN",
   "test_only_suite": "23 node-ops scenarios plus existing repository suite",
   "python_tests": "86/86 PASS",
   "compileall": "PASS",
   "powershell_parse": "PASS",
   "sqlite_integrity_fk": "PASS_TEST_ONLY",
+  "artifact_integrity_tests": "TEST_ONLY_PASS",
   "execution_api_path_count": 0,
   "mql5_compile": "NOT_RUN",
-  "phase2_ci": "PENDING_EXACT_HEAD_CI",
-  "phase3_ci": "PENDING_EXACT_HEAD_CI",
-  "phase3_1_ci": "PENDING_EXACT_HEAD_CI",
+  "git_diff_check": "PASS_AT_EVIDENCE_GENERATION",
+  "ci_at_implementation_head": {
+    "head": "f671f709c5bd9820c8f9de7a3dece9a526e4f379",
+    "phase2": "SUCCESS",
+    "phase2_run": "35092819101",
+    "phase3": "SUCCESS",
+    "phase3_run": "35092819103",
+    "phase3_1": "SUCCESS",
+    "phase3_1_run": "35092819102",
+    "verified_at_utc": "2026-09-16T14:48:11.7317021Z"
+  },
+  "ci_for_final_head": "PENDING_AFTER_EVIDENCE_COMMIT",
   "live_execution_enabled": false,
   "forward_authorization_status": "NOT_CREATED",
   "forward_run_id": "NOT_CREATED",
@@ -29,8 +108,11 @@
   "merge_ready": false,
   "ready_for_phase4": false,
   "limitations": [
-    "Windows clean-machine bootstrap, MT5 GUI, Task Scheduler lock/logoff/reboot behavior require a real Windows acceptance run.",
-    "Production package must be generated later from explicitly supplied real frozen model/index/EA artifacts and an externally trusted digest or signature.",
+    "No clean Windows host or VM was provided; CI Ubuntu and this existing development checkout cannot prove clean bootstrap or Windows-specific behavior.",
+    "A valid phase3-historical-similarity-index/1 artifact is missing; phase2 similarity_results.json is not a substitute and was not rebuilt.",
+    "The production EA EX5/preset target was not selected and independently approved, so no production package was created.",
+    "Detached package attestation is pending operator confirmation through a trusted channel.",
+    "MT5 preflight, MT5 GUI behavior, Scheduler lock/logoff/reboot behavior and MQL5 compile were not run in this acceptance task.",
     "This PR does not activate FORWARD and does not create authorization."
   ]
 }
