@@ -3,6 +3,7 @@
   "status": "NOT_VERIFIED",
   "branch": "feature/trading-agent-phase3-canonical-telemetry",
   "base_sha": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
+  "head_sha": "c6e254b3ddae6816d83e76a02f82e8de4a2a446d",
   "baseline_artifact": {
     "role": "original EA at main base revision",
     "source_commit": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
@@ -14,19 +15,23 @@
   },
   "candidate_artifact": {
     "role": "canonical-opportunity telemetry EA on current branch",
-    "source_commit": "3578fb83bd3796ec4b79dd80f6dc5f91cb4d00d4",
+    "source_commit": "c6e254b3ddae6816d83e76a02f82e8de4a2a446d",
     "source": "outputs/Mentor_RSI_MTF_v1.mq5",
-    "compiled_ex5": "outputs/Mentor_RSI_MTF_v1.ex5",
+    "compiled_ex5": "outputs/build/mt5-latest/MQL5/Experts/Advisors/Phase3CanonicalCandidate.ex5",
     "compiled_ex5_present": true,
-    "compiled_ex5_size_bytes": 303546,
-    "compiled_ex5_timestamp": "2026-09-15T11:52:02+07:00"
+    "compiled_ex5_size_bytes": 305704,
+    "compiled_ex5_timestamp": "2026-09-16T11:16:57+07:00"
   },
   "terminal": {
     "path": "E:\\build-bot\\outputs\\build\\mt5-latest\\terminal64.exe",
     "version": "5.0.0.6182",
     "metaeditor_path": "D:\\MetaTrader5\\metaeditor64.exe",
     "metaeditor_version": "5.0.0.6182",
-    "data_directory": "D:\\MetaTrader5 (no local MQL5 tree observed)",
+    "data_directory": "E:\\build-bot\\outputs\\build\\mt5-latest",
+    "other_terminal_installations": [
+      "D:\\MetaTrader5\\terminal64.exe",
+      "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    ],
     "compile_include_root": "E:\\build-bot\\outputs\\build\\mt5-v82-runtime\\MQL5\\Include"
   },
   "tester_config": {
@@ -55,8 +60,13 @@
   "sanity_run": {
     "status": "UNAVAILABLE",
     "report_created": false,
+    "attempt_count": 3,
+    "latest_config": "outputs/build/phase3-canonical-sanity.ini",
+    "latest_terminal_log": "outputs/build/mt5-latest/logs/20260916.log",
+    "expected_report": "outputs/build/mt5-latest/reports/codex/phase3_canonical_sanity.html",
     "reason": "portable terminal was not synchronized with the trade server"
   },
+  "root_cause_classification": "ENVIRONMENT_ERROR / ACCOUNT_TERMINAL_STATE_ERROR",
   "baseline_result": null,
   "candidate_result": null,
   "comparison": {
@@ -77,7 +87,7 @@
   "compile_evidence": {
     "status": "PASS_0_ERRORS_0_WARNINGS",
     "baseline_log": "outputs/build/phase3-canonical-baseline-compile-v82.log",
-    "candidate_log": "outputs/build/phase3-canonical-compile-v82.log",
+    "candidate_log": "outputs/build/phase3-canonical-compile-v82-rerun.log",
     "include_root": "outputs/build/mt5-v82-runtime/MQL5/Include",
     "baseline_call_sites_unchanged": true,
     "prior_incomplete_include_attempt": "outputs/build/mt5-latest/MQL5/Include"

@@ -64,9 +64,10 @@ V26 authoritative fixtures are available. No authoritative V63 audit fixture is 
 
 The current MetaEditor run used `D:\MetaTrader5\metaeditor64.exe`, build
 `5.0.0.6182`, with `outputs/build/mt5-v82-runtime/MQL5/Include`; it produced a
-303,546-byte tester-visible candidate EX5 with `0 errors, 0 warnings`. The portable
-tester used build `5.0.0.6182` from `outputs/build/mt5-latest`, but both sanity
-attempts logged that the terminal was not synchronized with the trade server and
-created no report. See `mt5_tester_diagnostic.md` for the exact log evidence.
+305,704-byte tester-visible candidate EX5 with `0 errors, 0 warnings`. The portable
+tester used build `5.0.0.6182` from `outputs/build/mt5-latest`, but three sanity
+attempts (including one after the config audit) logged that the terminal was not
+synchronized with the trade server and created no report. See
+`mt5_tester_diagnostic.md` for the exact log evidence.
 
 This PR stops before merge and before activation.

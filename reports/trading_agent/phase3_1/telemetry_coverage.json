@@ -2,7 +2,7 @@
   "report_schema": "phase3-telemetry-coverage/1",
   "branch": "feature/trading-agent-phase3-canonical-telemetry",
   "base_sha": "6c3b9574f962f55bfb01e168f70eef0cad5e029c",
-  "head_sha": "3578fb83bd3796ec4b79dd80f6dc5f91cb4d00d4",
+  "head_sha": "c6e254b3ddae6816d83e76a02f82e8de4a2a446d",
   "status": "BLOCKED_ON_MT5_TESTER_SYNCHRONIZATION",
   "old_primary_source": "EXECUTION_CANDIDATE",
   "new_primary_source": "CANONICAL_OPPORTUNITY",
@@ -72,8 +72,8 @@
   "compile_include_root": "E:\\build-bot\\outputs\\build\\mt5-v82-runtime\\MQL5\\Include",
   "compiled_ex5_expected_path": "E:\\build-bot\\outputs\\build\\mt5-latest\\MQL5\\Experts\\Advisors\\Phase3CanonicalCandidate.ex5",
   "compiled_ex5_present": true,
-  "compiled_ex5_size_bytes": 303546,
-  "compiled_ex5_timestamp": "2026-09-15T11:52:02+07:00",
+  "compiled_ex5_size_bytes": 305704,
+  "compiled_ex5_timestamp": "2026-09-16T11:16:57+07:00",
   "mt5_tester_status": "UNAVAILABLE_TERMINAL_NOT_SYNCHRONIZED",
   "mql_compile": "PASS_0_ERRORS_0_WARNINGS",
   "mql5_compile": "PASS (0 errors, 0 warnings)",
@@ -83,7 +83,7 @@
   "order_difference_count": null,
   "execution_behavior_difference_count": null,
   "remaining_blockers": [
-    "The portable MT5 terminal could not synchronize with Exness-MT5Real15 during both sanity attempts.",
+    "The portable MT5 terminal could not synchronize with Exness-MT5Real15 during three sanity attempts, including one after the config audit.",
     "The tester did not create a report, so original-vs-telemetry execution parity remains unverified.",
     "No authoritative V63 Phase 1 raw audit fixture is present in the current source inventory."
   ],
