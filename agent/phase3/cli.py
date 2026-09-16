@@ -28,6 +28,21 @@ from .forward import (
     request_stop_forward,
     validate_forward_authorization,
 )
+from .node_ops import (
+    NodeOpsError,
+    acknowledge_takeover,
+    bootstrap_forward_node,
+    create_backup,
+    create_deployment_package,
+    handoff_snapshot,
+    ops_health,
+    plan_cross_machine_migration,
+    restore_backup,
+    run_mt5_preflight,
+    takeover_check,
+    verify_backup,
+    verify_deployment_package,
+)
 from .runtime import Phase3Runtime
 
 
@@ -127,6 +142,102 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_status = commands.add_parser("status-runtime", help="show persistent collector machine status")
     _common_arguments(runtime_status)
     runtime_status.add_argument("--json", action="store_true", help="emit JSON output")
+
+    package = commands.add_parser("package-forward-node", help="create an integrity-checked deployment package")
+    package.add_argument("--output", type=Path, required=True)
+    package.add_argument("--approved-git-sha", required=True)
+    package.add_argument("--repository-url", required=True)
+    package.add_argument("--bundle-manifest", type=Path, required=True)
+    package.add_argument("--model-bundle", type=Path, required=True)
+    package.add_argument("--history-index", type=Path, required=True)
+    package.add_argument("--ea-ex5", type=Path, required=True)
+    package.add_argument("--ea-preset", type=Path, required=True)
+    package.add_argument("--ea-source-revision", required=True)
+    package.add_argument("--dependency-manifest", type=Path, required=True)
+    package.add_argument("--source-mq5", type=Path, default=None)
+    package.add_argument("--phase1-fingerprint", default=None)
+    package.add_argument("--trusted-manifest-digest", default=None)
+    package.add_argument("--test-only", action="store_true")
+
+    package_verify = commands.add_parser("verify-forward-package", help="verify deployment package checksums and frozen contract")
+    package_verify.add_argument("--package-path", type=Path, required=True)
+    package_verify.add_argument("--expected-git-sha", default=None)
+    package_verify.add_argument("--expected-trusted-manifest-digest", default=None)
+
+    bootstrap = commands.add_parser("bootstrap-forward-node", help="bootstrap source/runtime/ops without activation")
+    bootstrap.add_argument("--package-path", type=Path, required=True)
+    bootstrap.add_argument("--install-root", type=Path, required=True)
+    bootstrap.add_argument("--runtime-root", type=Path, required=True)
+    bootstrap.add_argument("--ops-root", type=Path, required=True)
+    bootstrap.add_argument("--expected-git-sha", required=True)
+    bootstrap.add_argument("--expected-trusted-manifest-digest", default=None)
+    bootstrap.add_argument("--python-executable", type=Path, default=None)
+    bootstrap.add_argument("--allow-non-windows-test-only", action="store_true")
+
+    handoff = commands.add_parser("handoff-snapshot", help="write atomic dynamic handoff outside Git")
+    handoff.add_argument("--runtime-config", type=Path, required=True)
+    handoff.add_argument("--ops-root", type=Path, required=True)
+    handoff.add_argument("--run-id", default=None)
+    handoff.add_argument("--next-step", default=None)
+
+    health = commands.add_parser("ops-health", help="read-only collector and node health observer")
+    health.add_argument("--runtime-config", type=Path, required=True)
+    health.add_argument("--ops-root", type=Path, required=True)
+    health.add_argument("--warning-disk-free-bytes", type=int, default=10 * 1024 * 1024 * 1024)
+    health.add_argument("--critical-disk-free-bytes", type=int, default=2 * 1024 * 1024 * 1024)
+
+    backup = commands.add_parser("backup-forward-runtime", help="create a WAL-safe consistent backup")
+    backup.add_argument("--runtime-config", type=Path, required=True)
+    backup.add_argument("--ops-root", type=Path, required=True)
+    backup.add_argument("--backup-root", type=Path, default=None)
+    backup.add_argument("--backup-id", default=None)
+
+    backup_verify = commands.add_parser("verify-forward-backup", help="verify backup without restoring over a runtime")
+    backup_verify.add_argument("--backup-path", type=Path, required=True)
+    backup_verify.add_argument("--source-path", type=Path, default=None)
+
+    restore = commands.add_parser("restore-forward-backup", help="restore an isolated evidence copy")
+    restore.add_argument("--backup-path", type=Path, required=True)
+    restore.add_argument("--target-root", type=Path, required=True)
+    restore.add_argument("--mode", choices=("isolated",), default="isolated")
+
+    migration = commands.add_parser("plan-forward-migration", help="write cross-machine migration plan; no continuity claim")
+    migration.add_argument("--backup-path", type=Path, required=True)
+    migration.add_argument("--new-install-root", type=Path, required=True)
+    migration.add_argument("--new-runtime-root", type=Path, required=True)
+    migration.add_argument("--output", type=Path, default=None)
+
+    mt5 = commands.add_parser("mt5-preflight", help="audit MT5 paths and journal evidence without starting terminal")
+    mt5.add_argument("--terminal-path", type=Path, required=True)
+    mt5.add_argument("--data-directory", type=Path, required=True)
+    mt5.add_argument("--ea-path", type=Path, required=True)
+    mt5.add_argument("--preset-path", type=Path, required=True)
+    mt5.add_argument("--primary-source-path", type=Path, required=True)
+    mt5.add_argument("--ops-root", type=Path, required=True)
+    mt5.add_argument("--expected-server", default=None)
+    mt5.add_argument("--expected-account", default=None)
+    mt5.add_argument("--symbol", default="BTCUSD")
+    mt5.add_argument("--timeframe", default="H1")
+    mt5.add_argument("--common-files-root", type=Path, default=None)
+    mt5.add_argument("--journal-evidence-path", type=Path, default=None)
+    mt5.add_argument("--terminal-version", default=None)
+    mt5.add_argument("--expected-ea-sha256", default=None)
+    mt5.add_argument("--expected-preset-sha256", default=None)
+    mt5.add_argument("--market-data-confirmed", action="store_true")
+    mt5.add_argument("--real-record-confirmed", action="store_true")
+
+    takeover = commands.add_parser("takeover-check", help="check persistent handoff before agent takeover")
+    takeover.add_argument("--ops-root", type=Path, required=True)
+    takeover.add_argument("--expected-run-id", default=None)
+    takeover.add_argument("--expected-git-sha", default=None)
+    takeover.add_argument("--expected-source-identity", default=None)
+
+    takeover_ack = commands.add_parser("takeover-ack", help="append a takeover acknowledgement without restarting collector")
+    takeover_ack.add_argument("--ops-root", type=Path, required=True)
+    takeover_ack.add_argument("--agent-id", required=True)
+    takeover_ack.add_argument("--expected-run-id", default=None)
+    takeover_ack.add_argument("--expected-git-sha", default=None)
+    takeover_ack.add_argument("--expected-source-identity", default=None)
 
     return parser
 
@@ -468,6 +579,150 @@ def _command_status_runtime(args: argparse.Namespace) -> int:
     return 0
 
 
+def _node_ops_call(function: Any, *args: Any, **kwargs: Any) -> int:
+    """Chuẩn hóa lỗi fail-closed thành stderr/exit code cho wrapper PowerShell."""
+
+    try:
+        result = function(*args, **kwargs)
+    except NodeOpsError as exc:
+        raise SystemExit(str(exc)) from exc
+    _print(result)
+    return 0
+
+
+def _command_package_forward_node(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        create_deployment_package,
+        args.output,
+        approved_git_sha=args.approved_git_sha,
+        repository_url=args.repository_url,
+        bundle_manifest=args.bundle_manifest,
+        model_bundle=args.model_bundle,
+        history_index=args.history_index,
+        ea_ex5=args.ea_ex5,
+        ea_preset=args.ea_preset,
+        ea_source_revision=args.ea_source_revision,
+        dependency_manifest=args.dependency_manifest,
+        source_mq5=args.source_mq5,
+        phase1_fingerprint=args.phase1_fingerprint,
+        trusted_manifest_digest=args.trusted_manifest_digest,
+        test_only=bool(args.test_only),
+    )
+
+
+def _command_verify_forward_package(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        verify_deployment_package,
+        args.package_path,
+        expected_git_sha=args.expected_git_sha,
+        expected_trusted_manifest_digest=args.expected_trusted_manifest_digest,
+    )
+
+
+def _command_bootstrap_forward_node(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        bootstrap_forward_node,
+        args.package_path,
+        install_root=args.install_root,
+        runtime_root=args.runtime_root,
+        ops_root=args.ops_root,
+        expected_git_sha=args.expected_git_sha,
+        expected_trusted_manifest_digest=args.expected_trusted_manifest_digest,
+        python_executable=args.python_executable,
+        require_windows=not bool(args.allow_non_windows_test_only),
+        platform_name=None,
+    )
+
+
+def _command_handoff_snapshot(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    return _node_ops_call(handoff_snapshot, config, args.ops_root, run_id=args.run_id, next_step=args.next_step)
+
+
+def _command_ops_health(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    return _node_ops_call(
+        ops_health,
+        config,
+        args.ops_root,
+        warning_disk_free_bytes=args.warning_disk_free_bytes,
+        critical_disk_free_bytes=args.critical_disk_free_bytes,
+    )
+
+
+def _command_backup_forward_runtime(args: argparse.Namespace) -> int:
+    config = _runtime_config(args)
+    return _node_ops_call(create_backup, config, args.ops_root, backup_root=args.backup_root, backup_id=args.backup_id)
+
+
+def _command_verify_forward_backup(args: argparse.Namespace) -> int:
+    result = verify_backup(args.backup_path, source_path=args.source_path)
+    _print(result)
+    return 0 if result.get("status") == "BACKUP_VALID" else 1
+
+
+def _command_restore_forward_backup(args: argparse.Namespace) -> int:
+    return _node_ops_call(restore_backup, args.backup_path, args.target_root, mode=args.mode)
+
+
+def _command_plan_forward_migration(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        plan_cross_machine_migration,
+        args.backup_path,
+        new_install_root=args.new_install_root,
+        new_runtime_root=args.new_runtime_root,
+        output=args.output,
+    )
+
+
+def _command_mt5_preflight(args: argparse.Namespace) -> int:
+    try:
+        result = run_mt5_preflight(
+            terminal_path=args.terminal_path,
+            data_directory=args.data_directory,
+            ea_path=args.ea_path,
+            preset_path=args.preset_path,
+            primary_source_path=args.primary_source_path,
+            ops_root=args.ops_root,
+            expected_server=args.expected_server,
+            expected_account=args.expected_account,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            common_files_root=args.common_files_root,
+            journal_evidence_path=args.journal_evidence_path,
+            terminal_version=args.terminal_version,
+            market_data_confirmed=bool(args.market_data_confirmed),
+            real_record_confirmed=bool(args.real_record_confirmed),
+            expected_ea_sha256=args.expected_ea_sha256,
+            expected_preset_sha256=args.expected_preset_sha256,
+        )
+    except NodeOpsError as exc:
+        raise SystemExit(str(exc)) from exc
+    _print(result)
+    return 0 if result.get("preflight_status") == "PASS" else 1
+
+
+def _command_takeover_check(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        takeover_check,
+        args.ops_root,
+        expected_run_id=args.expected_run_id,
+        expected_git_sha=args.expected_git_sha,
+        expected_source_identity=args.expected_source_identity,
+    )
+
+
+def _command_takeover_ack(args: argparse.Namespace) -> int:
+    return _node_ops_call(
+        acknowledge_takeover,
+        args.ops_root,
+        agent_id=args.agent_id,
+        expected_run_id=args.expected_run_id,
+        expected_git_sha=args.expected_git_sha,
+        expected_source_identity=args.expected_source_identity,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -485,6 +740,18 @@ def main(argv: list[str] | None = None) -> int:
         "resume-forward": lambda value: _forward_collector(value, resume=True),
         "stop-forward": _command_stop_forward,
         "status-runtime": _command_status_runtime,
+        "package-forward-node": _command_package_forward_node,
+        "verify-forward-package": _command_verify_forward_package,
+        "bootstrap-forward-node": _command_bootstrap_forward_node,
+        "handoff-snapshot": _command_handoff_snapshot,
+        "ops-health": _command_ops_health,
+        "backup-forward-runtime": _command_backup_forward_runtime,
+        "verify-forward-backup": _command_verify_forward_backup,
+        "restore-forward-backup": _command_restore_forward_backup,
+        "plan-forward-migration": _command_plan_forward_migration,
+        "mt5-preflight": _command_mt5_preflight,
+        "takeover-check": _command_takeover_check,
+        "takeover-ack": _command_takeover_ack,
     }
     return int(commands[args.command](args))
 

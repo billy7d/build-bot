@@ -72,3 +72,21 @@ The primary opportunity observer writes a separate `phase3-opportunity-observati
 `ForwardRuntimeConfig.primary_opportunity_path` must point at the new opportunity stream before a future authorization can be prepared. The authorization contract records the raw schema, canonical schema, canonicalizer version/fingerprint, source identity, bundle, and code SHA; a legacy execution-candidate file cannot silently become the primary source.
 
 No authorization manifest is created unless the exact current Git SHA, frozen bundle/model/index, replay/smoke/database/one-way gates, and real telemetry source identity all pass. Synthetic or historical records never prove `MT5_TELEMETRY_STATUS=CONNECTED` or `FORWARD_COLLECTION_STATUS=ACTIVE`.
+
+## Fresh-node operations
+
+Operational tools are implemented in `node_ops.py`; mutable handoff and backup
+data remain outside the checkout. Read the runbooks in
+`docs/trading_agent/forward_ops/` before using them:
+
+```text
+package-forward-node -> verify-forward-package -> bootstrap-forward-node
+mt5-preflight -> handoff-snapshot -> ops-health -> backup-forward-runtime
+verify-forward-backup -> restore-forward-backup / plan-forward-migration
+takeover-check -> takeover-ack
+```
+
+Bootstrap is separate from `prepare-forward`, `start-forward` and Task
+Scheduler. It creates no authorization or run, does not fabricate a primary
+JSONL source, and keeps `execution_authority=NONE` and
+`live_execution_enabled=false`.
