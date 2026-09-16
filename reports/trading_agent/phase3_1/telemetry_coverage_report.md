@@ -1,6 +1,11 @@
 # Phase 3.1 Telemetry Coverage
 
-`PHASE3_1_CANONICAL_TELEMETRY_STATUS`: `BLOCKED_ON_MT5_TESTER_SYNCHRONIZATION`
+`PHASE3_1_CANONICAL_TELEMETRY_STATUS`: `PASS_WITH_V63_HISTORICAL_COVERAGE_LIMITATION`
+
+`MT5_TESTER_STATUS`: `PASS`
+
+`MT5_EXECUTION_PARITY`: `PASS`
+`EXECUTION_BEHAVIOR_DIFFERENCE_COUNT`: `0`
 
 ## Contract
 
@@ -10,6 +15,8 @@
 - Canonicalizer source of truth: `agent/data/normalization/canonical.py::canonical_opportunity_id`.
 - Canonicalizer version: `canonical-opportunity/1`.
 - Canonicalizer fingerprint: `0770ab50bf8509df0443468a9e2fbc0d1450b1c0cd167f56d426538f2b916892`.
+- Candidate source head used for parity: `148dc44b18d3f8b9658ac83c593819b009eba8e5`.
+- Evidence parent head before this reconciliation: `b152cd83269011c4af3bc9a2d5468783a2016efd`.
 
 Phase 1 fingerprint before/after remains:
 
@@ -44,30 +51,100 @@ The actual set is produced by deterministic replay of the authoritative Phase 1 
 - Resolved labels: 3,598 unique canonical opportunities, 85.66666666666667/month over the resolved historical window.
 - Estimated time to 500 resolved labels: 5.836575875486381 months.
 - Old execution-candidate monthly rate: `NOT_AVAILABLE`; no saved old primary stream was found, so no multiplier or old ETA is invented.
-- Performance measurement: `NOT_MEASURED_NO_RUNTIME_STREAM`; no live/tester stream was generated, so write-latency and bytes-per-day metrics are not invented.
+- Performance measurement: `NOT_MEASURED_NO_RUNTIME_STREAM`; no live or FORWARD runtime stream was generated. Tester telemetry was generated only for parity and is not used to claim write-latency or bytes-per-day metrics.
 
-V26 authoritative fixtures are available. No authoritative V63 audit fixture is present in the current Phase 1 source inventory; this remains a separate evidence blocker for V63-specific coverage/parity and is not fabricated.
+V26 authoritative fixtures are available. The V63 authoritative tester preset/config is available and was executed for execution parity. No authoritative V63 raw Phase 1 audit fixture is present in the current source inventory; therefore this report does not claim V63 historical coverage `PASS`.
 
-## Gate status at this report revision
+## MT5 tester recovery and execution parity
 
-- Historical adapter coverage: `PASS`.
-- `MT5_TESTER_STATUS`: `UNAVAILABLE_TERMINAL_NOT_SYNCHRONIZED`.
+The previous portable-terminal incident is retained as historical evidence in
+`mt5_tester_diagnostic.md`. The portable runtime at
+`E:\build-bot\outputs\build\mt5-latest\terminal64.exe` recorded no usable
+Exness-MT5Real15 synchronization and tester-not-synchronized before automatic
+testing, returning the `-1000012355` environment failure and creating no report.
+It was not deleted or rewritten as a successful run.
+
+The recovered environment was the installed, broker-synchronized terminal:
+
+| Item | Result |
+|---|---|
+| Terminal | `D:\MetaTrader5\terminal64.exe`, build `5.0.0.6182` |
+| MetaEditor | `D:\MetaTrader5\metaeditor64.exe`, build `5.0.0.6182` |
+| Data directory | `C:\Users\billy\AppData\Roaming\MetaQuotes\Terminal\03CEB46CA524FF6019F2D25A05B7513B` |
+| Broker server | `Exness-MT5Real15` |
+| Symbol / timeframe | `BTCUSD` / `H1` |
+| Full range | `2023.04.01` → `2023.12.31` |
+| Tester model | `4` — Every tick based on real ticks |
+| Deposit / leverage | `5000 USD` / `1:10` |
+| Execution mode / live trading | `0` / `AllowLiveTrading=0` |
+| Session status | `READY_DURING_TEST_RUNS` |
+
+The terminal log recorded broker authorization and terminal synchronization for
+Exness-MT5Real15 before the sanity and full-range runs. The short sanity run on
+`2023.04.01` → `2023.04.07` completed successfully and created a non-empty
+64,724-byte report. All four full-range runs also completed successfully and
+created non-empty reports:
+
+| Run | Tester result | Report bytes | Signals | Orders | Deals |
+|---|---|---:|---:|---:|---:|
+| V26 baseline | `successfully finished` | 304,668 | 98 | 248 | 248 |
+| V26 candidate | `successfully finished` | 305,320 | 98 | 248 | 248 |
+| V63 baseline | `successfully finished` | 288,756 | 89 | 230 | 230 |
+| V63 candidate | `successfully finished` | 289,408 | 89 | 230 | 230 |
+
+The baseline was the original EA from main at
+`6c3b9574f962f55bfb01e168f70eef0cad5e029c`; the candidate was built from
+`148dc44b18d3f8b9658ac83c593819b009eba8e5`. The same terminal, symbol,
+timeframe, dates, model, account settings, history and tester configuration
+were used for both artifacts. Only the EA artifact and the V26/V63 preset
+differed.
+
+Candidate-only tester streams were created with schema
+`phase3-opportunity-observation/1`: V26 had 735 rows / 1,025,318 bytes and V63
+had 443 rows / 617,862 bytes. The observer was enabled by the tester contract;
+these streams are telemetry evidence and are excluded from execution equality.
+
+| Parity metric | V26 | V63 |
+|---|---:|---:|
+| Signal difference count | 0 | 0 |
+| Order difference count | 0 | 0 |
+| Execution behavior difference count | 0 | 0 |
+| Parity status | `PASS` | `PASS` |
+
+The report/deal comparator and independent ordered Tester-journal comparison
+matched signal, order-performed, deal-performed, gate/diagnostic, position and
+close behavior streams. Numeric tolerance is `1e-6` for price, lot, SL and TP
+serialization only; it does not mask missing, extra, direction-changing or
+gate-changing events.
+
+This establishes V63 **execution parity**, not V63 **historical coverage**.
+The latter remains `NOT_VERIFIED` until an authoritative V63 raw Phase 1 audit
+fixture exists.
+
+## Gate status and CI timing
+
+- Historical adapter coverage: `PASS` (`3,618/3,618`, Phase 1 fingerprint unchanged).
+- `MT5_TESTER_STATUS`: `PASS`.
+- `MT5_EXECUTION_PARITY`: `PASS`.
+- `SIGNAL_DIFFERENCE_COUNT`: `0`.
+- `ORDER_DIFFERENCE_COUNT`: `0`.
+- `EXECUTION_BEHAVIOR_DIFFERENCE_COUNT`: `0`.
 - `MQL5_COMPILE`: `PASS_0_ERRORS_0_WARNINGS`.
-- `MT5_EXECUTION_PARITY`: `NOT_VERIFIED`.
-- `EXECUTION_BEHAVIOR_DIFFERENCE_COUNT`: `NOT_AVAILABLE` because the tester did not produce a report.
-- `READY_FOR_PHASE4=NO`.
-- `LIVE_EXECUTION_ENABLED=NO`.
-- `FORWARD_COLLECTION_STATUS=READY`.
-- No authorization was created.
-- No Task Scheduler task was installed or started.
-- No FORWARD run or live activation was performed.
+- `EXECUTION_API_PATH_COUNT`: `0`.
+- `LIVE_EXECUTION_ENABLED`: `NO`.
+- `FORWARD_COLLECTION_STATUS`: `READY`.
+- Authorization: not created.
+- Task Scheduler: not installed or started.
+- FORWARD run: not created.
 
-The current MetaEditor run used `D:\MetaTrader5\metaeditor64.exe`, build
-`5.0.0.6182`, with `outputs/build/mt5-v82-runtime/MQL5/Include`; it produced a
-305,704-byte tester-visible candidate EX5 with `0 errors, 0 warnings`. The portable
-tester used build `5.0.0.6182` from `outputs/build/mt5-latest`, but three sanity
-attempts (including one after the config audit) logged that the terminal was not
-synchronized with the trade server and created no report. See
-`mt5_tester_diagnostic.md` for the exact log evidence.
+The coverage JSON records
+`CI_STATUS_AT_EVIDENCE_COMMIT_CREATION=PENDING_EXACT_HEAD_CI`. This is the
+state at creation of the reconciliation commit, not a claim that CI failed.
+After push, CI must be checked against the exact new commit and PR metadata
+must be checked separately. Accordingly, `merge_ready=false` in this coverage
+artifact means that the artifact itself does not self-authorize merge before
+that post-commit verification; it is not an MT5 parity failure.
 
-This PR stops before merge and before activation.
+Sanitized evidence is limited to the coverage and parity reports. Raw terminal
+logs, tester cache, runtime databases, broker-private data and HTML reports
+remain outside Git. This PR stops before merge and before activation.
