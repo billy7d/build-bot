@@ -36,6 +36,19 @@ InstallRoot chỉ khi source chưa có. Nếu InstallRoot đã là repo nhưng H
 bootstrap dừng, không reset/clean/checkout đè. Runtime đã có authorization hoặc
 current run cũng làm bootstrap dừng để operator review.
 
+### Trust boundary sau security hardening
+
+Wrapper PowerShell chỉ chạy verifier từ một checkout source đã được phê duyệt
+ngoài package. `InstallRoot` phải tồn tại, có `.git`, đúng full SHA và clean;
+wrapper không chạy `bootstrap\bootstrap.ps1` trong package và không clone từ URL
+được lấy từ package trước trust boundary. Verifier đọc lại checksum map và tạo
+snapshot bytes bất biến; nếu package đổi sau lần verify thì dừng trước khi copy
+artifact vào runtime. Các lệnh Git đều nhận argv array, không qua shell.
+
+Manifest production có `test_only=true` luôn bị từ chối, kể cả có detached digest
+đúng. Fixture chỉ được kiểm tra qua mode `PackageVerificationMode.TEST_ONLY` trong
+test cô lập; digest của fixture không biến nó thành package production đáng tin.
+
 Readiness thành công có nghĩa:
 
 ```text

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -18,8 +19,10 @@ import tempfile
 import venv
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from ..features.fingerprint import fingerprint
 from ..memory.database import apply_migrations, connect_database, integrity_status
@@ -57,6 +60,8 @@ BACKUP_SCHEMA = "phase3-forward-backup/1"
 RESTORE_SCHEMA = "phase3-forward-restore/1"
 MACHINE_MANIFEST_SCHEMA = "phase3-forward-machine/1"
 PREFLIGHT_SCHEMA = "phase3-mt5-preflight/1"
+APPROVED_REPOSITORY_HOSTS = frozenset({"github.com"})
+_GITHUB_REPOSITORY_PATH = re.compile(r"^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?/?$")
 
 
 class NodeOpsError(ForwardControlError):
@@ -65,6 +70,13 @@ class NodeOpsError(ForwardControlError):
 
 class ArtifactIntegrityError(NodeOpsError):
     """Artifact thiếu, sai checksum hoặc không khớp frozen contract."""
+
+
+class PackageVerificationMode(str, Enum):
+    """Chế độ verify; production không bao giờ được hạ xuống TEST_ONLY."""
+
+    PRODUCTION = "PRODUCTION"
+    TEST_ONLY = "TEST_ONLY"
 
 
 @dataclass(frozen=True)
@@ -101,6 +113,13 @@ def _json_bytes(payload: Any) -> bytes:
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
+
+
+def _json_from_bytes(value: bytes, label: str) -> Any:
+    try:
+        return json.loads(value.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+        raise ArtifactIntegrityError(f"{label} không đọc được") from exc
 
 
 def _read_json(path: str | Path) -> Any:
@@ -190,6 +209,10 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
 def _required_file(path: str | Path, label: str) -> Path:
     target = Path(path).expanduser().resolve()
     if not target.is_file():
@@ -215,6 +238,63 @@ def _is_sha256_digest(value: Any) -> bool:
     return len(text) == 64 and all(char in "0123456789abcdefABCDEF" for char in text)
 
 
+def _validate_full_git_sha(value: Any, label: str) -> str:
+    text = str(value or "")
+    if len(text) != 40 or any(char not in "0123456789abcdefABCDEF" for char in text):
+        raise ArtifactIntegrityError(f"{label} phải là full Git SHA")
+    return text.lower()
+
+
+def _validate_repository_url(value: Any) -> str:
+    """Chỉ chấp nhận HTTPS GitHub URL dạng owner/repository[.git]."""
+
+    if not isinstance(value, str) or value != value.strip() or not value:
+        raise ArtifactIntegrityError("repository_url không hợp lệ")
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ArtifactIntegrityError("repository_url chứa control character")
+    if "\\" in value:
+        raise ArtifactIntegrityError("repository_url không được chứa backslash")
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise ArtifactIntegrityError("repository_url không parse được") from exc
+    if (
+        parsed.scheme.lower() != "https"
+        or hostname is None
+        or hostname.lower() not in APPROVED_REPOSITORY_HOSTS
+        or port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or not _GITHUB_REPOSITORY_PATH.fullmatch(parsed.path)
+    ):
+        raise ArtifactIntegrityError("repository_url không thuộc allowlist HTTPS GitHub")
+    return value
+
+
+def _repository_url_from_manifest(package_manifest: Mapping[str, Any]) -> str:
+    code = package_manifest.get("code")
+    if not isinstance(code, Mapping):
+        raise ArtifactIntegrityError("package thiếu code metadata")
+    return _validate_repository_url(code.get("repository_url"))
+
+
+def _run_command(arguments: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Chạy command bằng argv, không qua shell hoặc expression evaluation."""
+
+    return subprocess.run(
+        arguments,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+        shell=False,
+    )
+
+
 def _copy_if_absent_or_same(source: Path, target: Path, expected_sha256: str | None = None) -> bool:
     """Không ghi đè artifact runtime khác checksum; trả về có copy hay không."""
 
@@ -228,6 +308,39 @@ def _copy_if_absent_or_same(source: Path, target: Path, expected_sha256: str | N
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
     if expected_sha256 and sha256_file(target) != expected_sha256:
+        raise ArtifactIntegrityError(f"copy artifact không giữ được checksum: {target}")
+    return True
+
+
+def _copy_verified_bytes_if_absent_or_same(payload: bytes, target: Path, expected_sha256: str) -> bool:
+    """Ghi từ snapshot đã verify, không đọc lại package path sau trust boundary."""
+
+    if _sha256_bytes(payload) != expected_sha256:
+        raise ArtifactIntegrityError(f"verified artifact snapshot checksum mismatch: {target.name}")
+    if target.exists():
+        if not target.is_file():
+            raise NodeOpsError(f"runtime artifact target không phải file: {target}")
+        if sha256_file(target) != expected_sha256:
+            raise NodeOpsError(f"runtime artifact đã tồn tại nhưng khác checksum: {target}")
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    created = False
+    try:
+        with target.open("xb") as stream:
+            created = True
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except FileExistsError:
+        if not target.is_file() or sha256_file(target) != expected_sha256:
+            raise NodeOpsError(f"runtime artifact đã tồn tại nhưng khác checksum: {target}")
+        return False
+    except OSError as exc:
+        if created:
+            target.unlink(missing_ok=True)
+        raise ArtifactIntegrityError(f"không ghi được verified artifact: {target}") from exc
+    if sha256_file(target) != expected_sha256:
+        target.unlink(missing_ok=True)
         raise ArtifactIntegrityError(f"copy artifact không giữ được checksum: {target}")
     return True
 
@@ -282,8 +395,16 @@ def _write_checksums(package_root: Path) -> tuple[Path, str]:
 
 def _parse_checksums(package_root: Path) -> dict[str, str]:
     target = _required_file(package_root / "CHECKSUMS.sha256", "CHECKSUMS.sha256")
+    return _parse_checksums_bytes(target.read_bytes())
+
+
+def _parse_checksums_bytes(raw: bytes) -> dict[str, str]:
     result: dict[str, str] = {}
-    for raw_line in target.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ArtifactIntegrityError("CHECKSUMS.sha256 không phải UTF-8") from exc
+    for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
@@ -298,6 +419,62 @@ def _parse_checksums(package_root: Path) -> dict[str, str]:
             raise ArtifactIntegrityError(f"digest không hợp lệ: {relative_path}")
         result[relative_path] = digest.lower()
     return result
+
+
+def _package_file_names(package_root: Path) -> set[str]:
+    return {
+        path.relative_to(package_root).as_posix()
+        for path in package_root.rglob("*")
+        if path.is_file() and path.name != "CHECKSUMS.sha256"
+    }
+
+
+def _snapshot_verified_package(
+    package_root: Path,
+    expected_checksums: Mapping[str, str],
+    expected_checksums_sha256: str,
+) -> dict[str, bytes]:
+    """Đọc lại package sau verify và trả về snapshot bất biến để dùng tiếp.
+
+    Nếu package bị sửa giữa lần verify và trust boundary này, không file nào được
+    dùng. Runtime chỉ nhận bytes từ snapshot, không đọc lại đường dẫn package.
+    """
+
+    package_root = package_root.expanduser().resolve()
+    checksum_path = _required_file(package_root / "CHECKSUMS.sha256", "CHECKSUMS.sha256")
+    checksum_before = checksum_path.read_bytes()
+    if _sha256_bytes(checksum_before) != expected_checksums_sha256:
+        raise ArtifactIntegrityError("PACKAGE_CHANGED_AFTER_VERIFICATION: CHECKSUMS.sha256")
+    if _parse_checksums_bytes(checksum_before) != dict(expected_checksums):
+        raise ArtifactIntegrityError("PACKAGE_CHANGED_AFTER_VERIFICATION: checksum map")
+    if _package_file_names(package_root) != set(expected_checksums):
+        raise ArtifactIntegrityError("PACKAGE_CHANGED_AFTER_VERIFICATION: package files")
+
+    snapshot: dict[str, bytes] = {}
+    for relative, expected in expected_checksums.items():
+        safe_relative = _safe_relative(relative)
+        source = package_root / safe_relative
+        try:
+            payload = source.read_bytes()
+        except OSError as exc:
+            raise ArtifactIntegrityError(f"PACKAGE_CHANGED_AFTER_VERIFICATION: {relative}") from exc
+        if _sha256_bytes(payload) != expected:
+            raise ArtifactIntegrityError(f"PACKAGE_CHANGED_AFTER_VERIFICATION: {relative}")
+        snapshot[safe_relative.as_posix()] = payload
+
+    checksum_after = checksum_path.read_bytes()
+    if checksum_after != checksum_before:
+        raise ArtifactIntegrityError("PACKAGE_CHANGED_AFTER_VERIFICATION: CHECKSUMS.sha256")
+    if _package_file_names(package_root) != set(expected_checksums):
+        raise ArtifactIntegrityError("PACKAGE_CHANGED_AFTER_VERIFICATION: package files")
+    return snapshot
+
+
+def _verified_payload(snapshot: Mapping[str, bytes], relative: Path, label: str) -> bytes:
+    try:
+        return snapshot[relative.as_posix()]
+    except KeyError as exc:
+        raise ArtifactIntegrityError(f"{label} không nằm trong verified package: {relative}") from exc
 
 
 def create_deployment_package(
@@ -323,10 +500,8 @@ def create_deployment_package(
     truyền vào; vì vậy thiếu model/index sẽ dừng thay vì retrain hay fabricate.
     """
 
-    if len(str(approved_git_sha)) != 40 or any(char not in "0123456789abcdefABCDEF" for char in str(approved_git_sha)):
-        raise ArtifactIntegrityError("approved_git_sha phải là full Git SHA")
-    if not str(repository_url).strip():
-        raise ArtifactIntegrityError("repository_url không được trống")
+    approved_git_sha = _validate_full_git_sha(approved_git_sha, "approved_git_sha")
+    repository_url = _validate_repository_url(repository_url)
     if not str(ea_source_revision).strip():
         raise ArtifactIntegrityError("ea_source_revision phải được xác nhận rõ")
 
@@ -424,45 +599,49 @@ def create_deployment_package(
     atomic_write_json(config_root / "forward.template.json", template)
     bootstrap_root = package_root / "bootstrap"
     bootstrap_root.mkdir(parents=True, exist_ok=True)
-    bootstrap_script = f'''[CmdletBinding()]
+    bootstrap_script = r'''[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$InstallRoot,
     [Parameter(Mandatory=$true)][string]$RuntimeRoot,
     [Parameter(Mandatory=$true)][string]$OpsRoot,
     [Parameter(Mandatory=$true)][string]$PackagePath,
-    [string]$ExpectedGitSha = '{str(approved_git_sha).lower()}',
+    [Parameter(Mandatory=$true)][string]$ExpectedGitSha,
     [string]$ExpectedTrustedManifestDigest,
     [string]$PythonPath = 'python'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-# Bootstrap package không chứa credential và không đăng ký Scheduler.
-if (-not (Test-Path -LiteralPath $PackagePath -PathType Container)) {{ throw 'PackagePath không tồn tại.' }}
-$installParent = Split-Path -Parent $InstallRoot
-if ($installParent -and -not (Test-Path -LiteralPath $installParent -PathType Container)) {{
-    New-Item -ItemType Directory -Force -Path $installParent | Out-Null
-}}
-if ((Test-Path -LiteralPath $InstallRoot -PathType Container) -and
-    (Test-Path -LiteralPath (Join-Path $InstallRoot '.git'))) {{
-    # Source đã có thì Python bootstrap sẽ kiểm tra đúng SHA mà không reset.
-}} elseif (Test-Path -LiteralPath $InstallRoot -PathType Container) {{
-    if ((Get-ChildItem -LiteralPath $InstallRoot -Force | Measure-Object).Count -gt 0) {{ throw 'InstallRoot không rỗng và chưa phải Git repository.' }}
-    & git clone --no-checkout '{str(repository_url)}' $InstallRoot
-    if ($LASTEXITCODE -ne 0) {{ throw 'git clone thất bại.' }}
-    & git -C $InstallRoot checkout --detach $ExpectedGitSha
-    if ($LASTEXITCODE -ne 0) {{ throw 'checkout approved SHA thất bại.' }}
-}} else {{
-    & git clone --no-checkout '{str(repository_url)}' $InstallRoot
-    if ($LASTEXITCODE -ne 0) {{ throw 'git clone thất bại.' }}
-    & git -C $InstallRoot checkout --detach $ExpectedGitSha
-    if ($LASTEXITCODE -ne 0) {{ throw 'checkout approved SHA thất bại.' }}
-}}
-if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot '.git'))) {{
-    throw 'InstallRoot chưa là checkout Git sau clone.'
-}}
+# This package script is only a post-verification handoff to a trusted source.
+# It must never clone, evaluate, or execute code from the package itself.
+if (-not (Test-Path -LiteralPath $PackagePath -PathType Container)) { throw 'PackagePath không tồn tại.' }
+if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) {
+    throw 'BOOTSTRAP_STOP_TRUSTED_SOURCE_REQUIRED'
+}
+if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot '.git'))) {
+    throw 'BOOTSTRAP_STOP_TRUSTED_SOURCE_REQUIRED'
+}
+if ($ExpectedGitSha -notmatch '^[0-9a-fA-F]{40}$') {
+    throw 'BOOTSTRAP_STOP_INVALID_EXPECTED_GIT_SHA'
+}
+$gitShaArguments = @('-C', $InstallRoot, 'rev-parse', '--verify', 'HEAD')
+$actualGitShaOutput = & git @gitShaArguments 2>$null
+$gitShaExitCode = $LASTEXITCODE
+$actualGitSha = ($actualGitShaOutput -join "`n").Trim()
+if ($gitShaExitCode -ne 0 -or $actualGitSha -ne $ExpectedGitSha.ToLowerInvariant()) {
+    throw 'BOOTSTRAP_STOP_TRUSTED_SOURCE_SHA_MISMATCH'
+}
+$gitStatusArguments = @('-C', $InstallRoot, 'status', '--porcelain', '--untracked-files=all')
+$sourceStatusOutput = & git @gitStatusArguments 2>$null
+$gitStatusExitCode = $LASTEXITCODE
+if ($gitStatusExitCode -ne 0) {
+    throw 'BOOTSTRAP_STOP_TRUSTED_SOURCE_STATUS_UNAVAILABLE'
+}
+if ((($sourceStatusOutput -join "`n").Trim()).Length -gt 0) {
+    throw 'BOOTSTRAP_STOP_TRUSTED_SOURCE_NOT_CLEAN'
+}
 Push-Location $InstallRoot
-try {{
+try {
     $arguments = @(
         '-m', 'agent.phase3', 'bootstrap-forward-node',
         '--package-path', $PackagePath,
@@ -471,12 +650,12 @@ try {{
         '--ops-root', $OpsRoot,
         '--expected-git-sha', $ExpectedGitSha
     )
-    if ($ExpectedTrustedManifestDigest) {{
+    if ($ExpectedTrustedManifestDigest) {
         $arguments += @('--expected-trusted-manifest-digest', $ExpectedTrustedManifestDigest)
-    }}
+    }
     & $PythonPath @arguments
     exit $LASTEXITCODE
-}} finally {{ Pop-Location }}
+} finally { Pop-Location }
 '''
     atomic_write_text(bootstrap_root / "bootstrap.ps1", bootstrap_script)
 
@@ -580,47 +759,63 @@ def verify_deployment_package(
     *,
     expected_git_sha: str | None = None,
     expected_trusted_manifest_digest: str | None = None,
+    mode: PackageVerificationMode = PackageVerificationMode.PRODUCTION,
 ) -> dict[str, Any]:
-    """Kiểm tra checksum toàn package và frozen intelligence trước bootstrap."""
+    """Kiểm tra package trước bootstrap, mặc định là production fail-closed.
 
+    ``TEST_ONLY`` chỉ là entry point explicit cho fixture cô lập. Nó không được
+    bootstrap production dùng, kể cả khi fixture có detached digest hợp lệ.
+    """
+
+    try:
+        verification_mode = PackageVerificationMode(mode)
+    except (TypeError, ValueError) as exc:
+        raise ArtifactIntegrityError("package verification mode không hợp lệ") from exc
     package_root = Path(package_path).expanduser().resolve()
-    manifest_path = _required_file(package_root / "manifest.json", "package manifest")
-    manifest = _read_json(manifest_path)
-    if not isinstance(manifest, Mapping) or manifest.get("schema") != PACKAGE_MANIFEST_SCHEMA:
-        raise ArtifactIntegrityError("package manifest schema không được hỗ trợ")
-    checksums = _parse_checksums(package_root)
-    actual_files = {
-        path.relative_to(package_root).as_posix()
-        for path in package_root.rglob("*")
-        if path.is_file() and path.name != "CHECKSUMS.sha256"
-    }
+    _required_file(package_root / "manifest.json", "package manifest")
+    checksum_path = _required_file(package_root / "CHECKSUMS.sha256", "CHECKSUMS.sha256")
+    checksum_bytes = checksum_path.read_bytes()
+    checksums = _parse_checksums_bytes(checksum_bytes)
+    actual_files = _package_file_names(package_root)
     if set(checksums) != actual_files:
         raise ArtifactIntegrityError("CHECKSUMS.sha256 không bao phủ đúng package files")
-    for relative, expected in checksums.items():
-        actual = sha256_file(package_root / _safe_relative(relative))
-        if actual != expected:
-            raise ArtifactIntegrityError(f"package checksum mismatch: {relative}")
-    manifest_sha256 = sha256_file(manifest_path)
-    test_only = bool(manifest.get("test_only", False))
+    checksums_sha256 = _sha256_bytes(checksum_bytes)
+    snapshot = _snapshot_verified_package(package_root, checksums, checksums_sha256)
+    manifest_bytes = snapshot.get("manifest.json")
+    if manifest_bytes is None:
+        raise ArtifactIntegrityError("package thiếu manifest.json trong verified snapshot")
+    manifest = _json_from_bytes(manifest_bytes, "package manifest")
+    if not isinstance(manifest, Mapping) or manifest.get("schema") != PACKAGE_MANIFEST_SCHEMA:
+        raise ArtifactIntegrityError("package manifest schema không được hỗ trợ")
+
+    raw_test_only = manifest.get("test_only", False)
+    if not isinstance(raw_test_only, bool):
+        raise ArtifactIntegrityError("package test_only phải là boolean")
+    test_only = raw_test_only
+    if test_only and verification_mode is PackageVerificationMode.PRODUCTION:
+        raise ArtifactIntegrityError("PACKAGE_TEST_ONLY_NOT_ALLOWED_IN_PRODUCTION")
+    if not test_only and verification_mode is PackageVerificationMode.TEST_ONLY:
+        raise ArtifactIntegrityError("TEST_ONLY_MODE_REQUIRES_TEST_ONLY_PACKAGE")
+
+    manifest_sha256 = _sha256_bytes(manifest_bytes)
     if expected_trusted_manifest_digest is not None:
         if not _is_sha256_digest(expected_trusted_manifest_digest):
             raise ArtifactIntegrityError("trusted manifest digest phải là SHA-256")
         if manifest_sha256 != str(expected_trusted_manifest_digest).lower():
             raise ArtifactIntegrityError("detached trusted manifest digest mismatch")
-        trusted_package_status = "TRUSTED_EXTERNAL_MANIFEST_DIGEST_MATCH"
+        trusted_package_status = "TEST_ONLY_ISOLATED_DIGEST_MATCH" if test_only else "TRUSTED_EXTERNAL_MANIFEST_DIGEST_MATCH"
     elif test_only:
-        # Fixture TEST_ONLY được phép chạy không có attestation production.
-        trusted_package_status = "UNVERIFIED_EXTERNAL_ATTESTATION_REQUIRED"
+        trusted_package_status = "TEST_ONLY_ISOLATED_UNATTESTED"
     else:
         # Hash nằm trong package không tự chứng minh package chưa bị thay thế.
         raise ArtifactIntegrityError("PACKAGE_TRUST_ATTESTATION_REQUIRED")
     code = manifest.get("code")
     if not isinstance(code, Mapping) or not str(code.get("approved_git_sha", "")):
         raise ArtifactIntegrityError("package thiếu approved Git SHA")
-    approved_sha = str(code["approved_git_sha"]).lower()
-    if len(approved_sha) != 40 or any(char not in "0123456789abcdef" for char in approved_sha):
-        raise ArtifactIntegrityError("package approved Git SHA không phải full SHA")
-    if expected_git_sha and approved_sha != str(expected_git_sha).lower():
+    approved_sha = _validate_full_git_sha(code["approved_git_sha"], "package approved Git SHA")
+    repository_url = _validate_repository_url(code.get("repository_url"))
+    expected_sha = _validate_full_git_sha(expected_git_sha, "ExpectedGitSha") if expected_git_sha is not None else None
+    if expected_sha and approved_sha != expected_sha:
         raise ArtifactIntegrityError("package approved Git SHA khác ExpectedGitSha")
     safety = manifest.get("safety")
     if (
@@ -634,11 +829,17 @@ def verify_deployment_package(
         or safety.get("scheduler_install_requested") is not False
     ):
         raise ArtifactIntegrityError("package safety contract không fail-closed")
-    bundle_path = package_root / _manifest_artifact(manifest, "bundle_manifest")
-    model_path = package_root / _manifest_artifact(manifest, "model_bundle")
-    index_path = package_root / _manifest_artifact(manifest, "historical_similarity_index")
-    bundle = validate_bundle(_read_json(bundle_path))
-    model_payload = _read_json(model_path)
+    bundle_relative = _manifest_artifact(manifest, "bundle_manifest")
+    model_relative = _manifest_artifact(manifest, "model_bundle")
+    index_relative = _manifest_artifact(manifest, "historical_similarity_index")
+    try:
+        bundle_bytes = snapshot[bundle_relative.as_posix()]
+        model_bytes = snapshot[model_relative.as_posix()]
+        index_bytes = snapshot[index_relative.as_posix()]
+    except KeyError as exc:
+        raise ArtifactIntegrityError("manifest artifact không nằm trong verified package") from exc
+    bundle = validate_bundle(_json_from_bytes(bundle_bytes, "package bundle"))
+    model_payload = _json_from_bytes(model_bytes, "package model")
     if not isinstance(model_payload, Mapping):
         raise ArtifactIntegrityError("package model không phải object")
     model = ModelBundle.from_dict(model_payload)
@@ -649,18 +850,21 @@ def verify_deployment_package(
     if model_digest != bundle.model_fingerprint or model_digest != str(model_metadata.get("fingerprint")):
         raise ArtifactIntegrityError("package model fingerprint mismatch")
     try:
-        load_history_index_artifact(index_path, bundle)
+        with tempfile.TemporaryDirectory(prefix="phase3-verify-") as directory:
+            index_path = Path(directory) / index_relative.name
+            index_path.write_bytes(index_bytes)
+            load_history_index_artifact(index_path, bundle)
     except ForwardControlError as exc:
         raise ArtifactIntegrityError("package historical index contract mismatch") from exc
     ea = manifest.get("ea")
     if not isinstance(ea, Mapping):
         raise ArtifactIntegrityError("package thiếu EA metadata")
     try:
-        ex5_path = package_root / _safe_relative(str(ea.get("ex5_path", "")))
-        preset_path = package_root / _safe_relative(str(ea.get("preset_path", "")))
-        ex5_digest = sha256_file(ex5_path)
-        preset_digest = sha256_file(preset_path)
-    except (ArtifactIntegrityError, OSError) as exc:
+        ex5_relative = _safe_relative(str(ea.get("ex5_path", "")))
+        preset_relative = _safe_relative(str(ea.get("preset_path", "")))
+        ex5_digest = _sha256_bytes(snapshot[ex5_relative.as_posix()])
+        preset_digest = _sha256_bytes(snapshot[preset_relative.as_posix()])
+    except (ArtifactIntegrityError, KeyError) as exc:
         raise ArtifactIntegrityError("package EA EX5/preset path không hợp lệ") from exc
     if ex5_digest != str(ea.get("ex5_sha256")) or preset_digest != str(ea.get("preset_sha256")):
         raise ArtifactIntegrityError("EA EX5/preset checksum mismatch")
@@ -668,14 +872,16 @@ def verify_deployment_package(
         "status": "PACKAGE_VALID",
         "package_path": str(package_root),
         "manifest_sha256": manifest_sha256,
-        "checksums_sha256": sha256_file(package_root / "CHECKSUMS.sha256"),
+        "checksums_sha256": checksums_sha256,
         "approved_git_sha": approved_sha,
+        "repository_url": repository_url,
         "bundle_id": bundle.bundle_id,
         "phase1_fingerprint": bundle.phase1_fingerprint,
         "historical_reference_cutoff_utc": bundle.historical_reference_cutoff_utc,
         "artifact_integrity_status": "PASS",
         "trusted_package_status": trusted_package_status,
         "test_only": test_only,
+        "file_hashes": dict(checksums),
     }
 
 
@@ -722,6 +928,8 @@ def _command_available(name: str) -> bool:
 def _ensure_source_checkout(paths: NodePaths, package_manifest: Mapping[str, Any], expected_git_sha: str) -> None:
     """Clone/chọn SHA chỉ khi install root chưa có repo; không reset repo cũ."""
 
+    expected_git_sha = _validate_full_git_sha(expected_git_sha, "ExpectedGitSha")
+    repository_url = _repository_url_from_manifest(package_manifest)
     install = paths.install_root
     if install.exists():
         if not install.is_dir():
@@ -731,22 +939,12 @@ def _ensure_source_checkout(paths: NodePaths, package_manifest: Mapping[str, Any
             if any(install.iterdir()):
                 raise NodeOpsError("BOOTSTRAP_STOP_NON_REPOSITORY_INSTALL_ROOT")
             # Git clone vào thư mục rỗng đã tạo không xóa dữ liệu nào.
-            repository_url = str(package_manifest.get("code", {}).get("repository_url", ""))
-            if not repository_url:
-                raise NodeOpsError("package thiếu repository_url để clone")
-            result = subprocess.run(
-                ["git", "clone", "--no-checkout", repository_url, str(install)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            result = _run_command(["git", "clone", "--no-checkout", repository_url, str(install)], cwd=install.parent)
             if result.returncode != 0:
                 raise NodeOpsError(f"git clone thất bại: {result.stderr.strip()}")
-            result = subprocess.run(
+            result = _run_command(
                 ["git", "-C", str(install), "checkout", "--detach", expected_git_sha],
-                capture_output=True,
-                text=True,
-                check=False,
+                cwd=install.parent,
             )
             if result.returncode != 0:
                 raise NodeOpsError(f"checkout approved SHA thất bại: {result.stderr.strip()}")
@@ -756,22 +954,12 @@ def _ensure_source_checkout(paths: NodePaths, package_manifest: Mapping[str, Any
             raise NodeOpsError("BOOTSTRAP_STOP_REPOSITORY_SHA_MISMATCH")
         return
     install.parent.mkdir(parents=True, exist_ok=True)
-    repository_url = str(package_manifest.get("code", {}).get("repository_url", ""))
-    if not repository_url:
-        raise NodeOpsError("package thiếu repository_url để clone")
-    result = subprocess.run(
-        ["git", "clone", "--no-checkout", repository_url, str(install)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_command(["git", "clone", "--no-checkout", repository_url, str(install)], cwd=install.parent)
     if result.returncode != 0:
         raise NodeOpsError(f"git clone thất bại: {result.stderr.strip()}")
-    result = subprocess.run(
+    result = _run_command(
         ["git", "-C", str(install), "checkout", "--detach", expected_git_sha],
-        capture_output=True,
-        text=True,
-        check=False,
+        cwd=install.parent,
     )
     if result.returncode != 0:
         raise NodeOpsError(f"checkout approved SHA thất bại: {result.stderr.strip()}")
@@ -812,13 +1000,19 @@ def bootstrap_forward_node(
 ) -> dict[str, Any]:
     """Bootstrap idempotent một node, tuyệt đối chưa activation."""
 
+    expected_git_sha = _validate_full_git_sha(expected_git_sha, "ExpectedGitSha")
     paths = NodePaths.from_values(install_root, runtime_root, ops_root)
     package_check = verify_deployment_package(
         package_path,
         expected_git_sha=expected_git_sha,
         expected_trusted_manifest_digest=expected_trusted_manifest_digest,
     )
-    manifest = _read_json(Path(package_path).expanduser().resolve() / "manifest.json")
+    package_root = Path(package_path).expanduser().resolve()
+    file_hashes = package_check.get("file_hashes")
+    if not isinstance(file_hashes, Mapping):
+        raise ArtifactIntegrityError("verified package thiếu file hash snapshot")
+    package_snapshot = _snapshot_verified_package(package_root, file_hashes, str(package_check["checksums_sha256"]))
+    manifest = _json_from_bytes(_verified_payload(package_snapshot, Path("manifest.json"), "package manifest"), "package manifest")
     if not isinstance(manifest, Mapping):
         raise ArtifactIntegrityError("package manifest phải là object")
     reported_platform = str(platform_name or platform.system())
@@ -837,8 +1031,8 @@ def bootstrap_forward_node(
     paths.ops_root.mkdir(parents=True, exist_ok=True)
     _probe_writable(paths.runtime_root)
     _probe_writable(paths.ops_root)
-    _ensure_source_checkout(paths, manifest, str(expected_git_sha))
-    if current_git_sha(paths.install_root).lower() != str(expected_git_sha).lower():
+    _ensure_source_checkout(paths, manifest, expected_git_sha)
+    if current_git_sha(paths.install_root).lower() != expected_git_sha:
         raise NodeOpsError("BOOTSTRAP_STOP_REPOSITORY_SHA_MISMATCH")
 
     authorization_path = paths.runtime_root / "config" / "forward_authorization.json"
@@ -846,8 +1040,7 @@ def bootstrap_forward_node(
     if authorization_path.exists() or current_run_path.exists():
         raise NodeOpsError("BOOTSTRAP_STOP_EXISTING_AUTHORIZATION_OR_RUN_REQUIRES_REVIEW")
 
-    package_root = Path(package_path).expanduser().resolve()
-    package_manifest = _read_json(package_root / "manifest.json")
+    package_manifest = manifest
     artifacts = package_manifest.get("artifacts", {})
     if not isinstance(artifacts, Mapping):
         raise ArtifactIntegrityError("package artifacts metadata không hợp lệ")
@@ -856,17 +1049,29 @@ def bootstrap_forward_node(
     role_to_runtime: dict[str, Path] = {}
     for role in ("bundle_manifest", "model_bundle", "historical_similarity_index"):
         relative = _manifest_artifact(package_manifest, role)
-        source = package_root / relative
-        destination = runtime_artifacts / source.name
-        _copy_if_absent_or_same(source, destination, sha256_file(source))
+        destination = runtime_artifacts / relative.name
+        expected_digest = str(file_hashes.get(relative.as_posix(), ""))
+        if not _is_sha256_digest(expected_digest):
+            raise ArtifactIntegrityError(f"verified artifact hash thiếu hoặc sai: {relative}")
+        _copy_verified_bytes_if_absent_or_same(
+            _verified_payload(package_snapshot, relative, role),
+            destination,
+            expected_digest,
+        )
         role_to_runtime[role] = destination
     for role in ("ea_ex5", "ea_preset", "ea_source"):
         if role not in artifacts:
             continue
         relative = _manifest_artifact(package_manifest, role)
-        source = package_root / relative
-        destination = runtime_artifacts / source.name
-        _copy_if_absent_or_same(source, destination, sha256_file(source))
+        destination = runtime_artifacts / relative.name
+        expected_digest = str(file_hashes.get(relative.as_posix(), ""))
+        if not _is_sha256_digest(expected_digest):
+            raise ArtifactIntegrityError(f"verified artifact hash thiếu hoặc sai: {relative}")
+        _copy_verified_bytes_if_absent_or_same(
+            _verified_payload(package_snapshot, relative, role),
+            destination,
+            expected_digest,
+        )
         role_to_runtime[role] = destination
 
     runtime_dirs = (
@@ -888,8 +1093,11 @@ def bootstrap_forward_node(
         directory.mkdir(parents=True, exist_ok=True)
 
     venv_python = _python_for_venv(python_executable, paths.runtime_root)
-    template_path = package_root / "config" / "forward.template.json"
-    template = _read_json(template_path)
+    template_relative = Path("config") / "forward.template.json"
+    template = _json_from_bytes(
+        _verified_payload(package_snapshot, template_relative, "forward.template.json"),
+        "forward.template.json",
+    )
     if not isinstance(template, Mapping):
         raise ArtifactIntegrityError("forward.template.json phải là object")
     replacements = {
@@ -937,7 +1145,7 @@ def bootstrap_forward_node(
         {
             "bootstrap": {
                 "status": "PASS",
-                "approved_git_sha": str(expected_git_sha).lower(),
+                "approved_git_sha": expected_git_sha,
                 "package_manifest_sha256": package_check["manifest_sha256"],
                 "package_checksums_sha256": package_check["checksums_sha256"],
                 "artifact_integrity_status": "PASS",
@@ -992,7 +1200,7 @@ def bootstrap_forward_node(
         "runtime_root": str(paths.runtime_root),
         "ops_root": str(paths.ops_root),
         "config_path": str(config_path),
-        "approved_git_sha": str(expected_git_sha).lower(),
+        "approved_git_sha": expected_git_sha,
         "artifact_integrity_status": "PASS",
         "trusted_package_status": package_check["trusted_package_status"],
         "database_integrity_status": "PASS",
@@ -2008,6 +2216,7 @@ __all__ = [
     "HEALTH_SCHEMA",
     "NodeOpsError",
     "NodePaths",
+    "PackageVerificationMode",
     "acknowledge_takeover",
     "append_operator_log",
     "atomic_write_json",

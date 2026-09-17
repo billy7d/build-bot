@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import unittest
 from contextlib import contextmanager
@@ -18,6 +20,9 @@ from agent.phase3.forward import current_git_sha, load_forward_config
 from agent.phase3.node_ops import (
     ArtifactIntegrityError,
     NodeOpsError,
+    PackageVerificationMode,
+    _snapshot_verified_package,
+    _validate_repository_url,
     acknowledge_takeover,
     bootstrap_forward_node,
     create_backup,
@@ -85,7 +90,7 @@ class ForwardNodeOpsTests(unittest.TestCase):
             "source": source_path,
         }
 
-    def _package(self, root: Path, *, output: Path | None = None) -> Path:
+    def _package(self, root: Path, *, output: Path | None = None, test_only: bool = True) -> Path:
         assets = self._write_assets(root)
         package = output or (root / "package")
         create_deployment_package(
@@ -100,23 +105,28 @@ class ForwardNodeOpsTests(unittest.TestCase):
             ea_source_revision=self.repo_sha,
             dependency_manifest=self.repo_root / "docs/trading_agent/forward_ops/dependency-manifest.json",
             source_mq5=assets["source"],
-            test_only=True,
+            test_only=test_only,
         )
         return package
+
+    def _production_package(self, root: Path, *, output: Path | None = None) -> tuple[Path, str]:
+        package = self._package(root, output=output, test_only=False)
+        return package, sha256_file(package / "manifest.json")
 
     @contextmanager
     def _environment(self) -> Iterator[tuple[Path, Path, Path, Path]]:
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            package = self._package(root)
-            runtime = root / "runtime"
-            ops = root / "ops"
+            package, trusted_digest = self._production_package(root)
+            runtime = root / "runtime spaced-đ"
+            ops = root / "ops spaced-空"
             result = bootstrap_forward_node(
                 package,
                 install_root=self.repo_root,
                 runtime_root=runtime,
                 ops_root=ops,
                 expected_git_sha=self.repo_sha,
+                expected_trusted_manifest_digest=trusted_digest,
                 python_executable=sys.executable,
                 require_windows=False,
                 platform_name="TEST_ONLY",
@@ -156,10 +166,14 @@ class ForwardNodeOpsTests(unittest.TestCase):
     def test_package_checksum_and_frozen_artifacts(self) -> None:
         with TemporaryDirectory() as directory:
             package = self._package(Path(directory))
-            verified = verify_deployment_package(package, expected_git_sha=self.repo_sha)
+            verified = verify_deployment_package(
+                package,
+                expected_git_sha=self.repo_sha,
+                mode=PackageVerificationMode.TEST_ONLY,
+            )
             self.assertEqual(verified["status"], "PACKAGE_VALID")
             self.assertEqual(verified["artifact_integrity_status"], "PASS")
-            self.assertEqual(verified["trusted_package_status"], "UNVERIFIED_EXTERNAL_ATTESTATION_REQUIRED")
+            self.assertEqual(verified["trusted_package_status"], "TEST_ONLY_ISOLATED_UNATTESTED")
             self.assertTrue((package / "bootstrap/bootstrap.ps1").is_file())
 
     def test_production_package_requires_detached_trusted_manifest_digest(self) -> None:
@@ -189,6 +203,195 @@ class ForwardNodeOpsTests(unittest.TestCase):
                 expected_trusted_manifest_digest=trusted_digest,
             )
             self.assertEqual(verified["trusted_package_status"], "TRUSTED_EXTERNAL_MANIFEST_DIGEST_MATCH")
+            with self.assertRaisesRegex(ArtifactIntegrityError, "detached trusted manifest digest mismatch"):
+                verify_deployment_package(
+                    package,
+                    expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest="0" * 64,
+                )
+            with self.assertRaisesRegex(ArtifactIntegrityError, "package approved Git SHA khác ExpectedGitSha"):
+                verify_deployment_package(
+                    package,
+                    expected_git_sha="0" * 40,
+                    expected_trusted_manifest_digest=trusted_digest,
+                )
+
+    def test_test_only_package_is_allowed_only_in_isolated_verify_mode(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = self._package(root)
+            trusted_digest = sha256_file(package / "manifest.json")
+            isolated = verify_deployment_package(
+                package,
+                expected_git_sha=self.repo_sha,
+                mode=PackageVerificationMode.TEST_ONLY,
+            )
+            self.assertEqual(isolated["trusted_package_status"], "TEST_ONLY_ISOLATED_UNATTESTED")
+            with self.assertRaisesRegex(ArtifactIntegrityError, "PACKAGE_TEST_ONLY_NOT_ALLOWED_IN_PRODUCTION"):
+                verify_deployment_package(
+                    package,
+                    expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest=trusted_digest,
+                )
+            with self.assertRaisesRegex(ArtifactIntegrityError, "PACKAGE_TEST_ONLY_NOT_ALLOWED_IN_PRODUCTION"):
+                bootstrap_forward_node(
+                    package,
+                    install_root=self.repo_root,
+                    runtime_root=root / "runtime",
+                    ops_root=root / "ops",
+                    expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest=trusted_digest,
+                    python_executable=sys.executable,
+                    require_windows=False,
+                    platform_name="TEST_ONLY",
+                )
+            self.assertFalse((root / "runtime").exists())
+            self.assertFalse((root / "ops").exists())
+
+    def test_test_only_tamper_and_snapshot_change_fail_closed(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = self._package(root)
+            verified = verify_deployment_package(
+                package,
+                expected_git_sha=self.repo_sha,
+                mode=PackageVerificationMode.TEST_ONLY,
+            )
+            (package / "artifacts/approved.set").write_text("tampered", encoding="utf-8")
+            with self.assertRaisesRegex(ArtifactIntegrityError, "PACKAGE_CHANGED_AFTER_VERIFICATION"):
+                _snapshot_verified_package(package, verified["file_hashes"], verified["checksums_sha256"])
+            with self.assertRaises(ArtifactIntegrityError):
+                verify_deployment_package(
+                    package,
+                    expected_git_sha=self.repo_sha,
+                    mode=PackageVerificationMode.TEST_ONLY,
+                )
+
+    def test_rehashed_test_only_flag_cannot_become_production(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = self._package(root)
+            original_manifest_digest = sha256_file(package / "manifest.json")
+            manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
+            manifest["test_only"] = False
+            (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            checksum_lines = []
+            for line in (package / "CHECKSUMS.sha256").read_text(encoding="utf-8").splitlines():
+                if line.endswith("  manifest.json"):
+                    line = f"{sha256_file(package / 'manifest.json')}  manifest.json"
+                checksum_lines.append(line)
+            (package / "CHECKSUMS.sha256").write_text("\n".join(checksum_lines) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ArtifactIntegrityError, "detached trusted manifest digest mismatch"):
+                verify_deployment_package(
+                    package,
+                    expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest=original_manifest_digest,
+                )
+
+    def test_repository_url_allowlist_rejects_injection_and_invalid_sha(self) -> None:
+        safe_url = "https://github.com/billy7d/build-bot.git"
+        self.assertEqual(_validate_repository_url(safe_url), safe_url)
+        payloads = (
+            "https://github.com/billy7d/build-bot.git' ; Set-Content pwned x",
+            'https://github.com/billy7d/build-bot.git"; Set-Content pwned x',
+            "https://github.com/billy7d/build-bot.git;Write-Output pwned",
+            "https://github.com/billy7d/build-bot.git&Write-Output pwned",
+            "https://github.com/billy7d/build-bot.git\nWrite-Output pwned",
+            "--upload-pack=Write-Output-pwned",
+            "http://github.com/billy7d/build-bot.git",
+            "https://evil.example/billy7d/build-bot.git",
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ArtifactIntegrityError, "repository_url"):
+                    _validate_repository_url(payload)
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = self._write_assets(root)
+            with self.assertRaisesRegex(ArtifactIntegrityError, "approved_git_sha"):
+                create_deployment_package(
+                    root / "invalid-sha-package",
+                    approved_git_sha="g" * 40,
+                    repository_url=safe_url,
+                    bundle_manifest=assets["bundle"],
+                    model_bundle=assets["model"],
+                    history_index=assets["index"],
+                    ea_ex5=assets["ea"],
+                    ea_preset=assets["preset"],
+                    ea_source_revision=self.repo_sha,
+                    dependency_manifest=self.repo_root / "docs/trading_agent/forward_ops/dependency-manifest.json",
+                )
+
+    def test_generated_bootstrap_uses_only_argument_arrays(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = self._package(root)
+            script = (package / "bootstrap/bootstrap.ps1").read_text(encoding="utf-8")
+            self.assertNotIn("https://github.com/billy7d/build-bot.git", script)
+            self.assertNotIn(self.repo_sha, script)
+            self.assertNotIn("git clone", script.lower())
+            self.assertNotIn("Invoke-Expression", script)
+            self.assertIn("& $PythonPath @arguments", script)
+
+    def test_wrapper_never_executes_unverified_package_bootstrap(self) -> None:
+        powershell = shutil.which("pwsh") or shutil.which("powershell")
+        if not powershell:
+            self.skipTest("PowerShell is not installed")
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "package"
+            (package / "bootstrap").mkdir(parents=True)
+            marker = root / "package-code-executed.txt"
+            (package / "bootstrap/bootstrap.ps1").write_text(
+                f"Set-Content -LiteralPath '{marker}' -Value executed\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    powershell,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(self.repo_root / "scripts/phase3/bootstrap_forward_node.ps1"),
+                    "-InstallRoot",
+                    str(root / "trusted source spaced-đ"),
+                    "-RuntimeRoot",
+                    str(root / "runtime spaced-空"),
+                    "-OpsRoot",
+                    str(root / "ops spaced-空"),
+                    "-PackagePath",
+                    str(package),
+                    "-ExpectedGitSha",
+                    self.repo_sha,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("TRUSTED_SOURCE_REQUIRED", completed.stdout + completed.stderr)
+            self.assertFalse(marker.exists())
+
+    def test_verified_package_snapshot_is_reused_for_bootstrap_artifacts(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, trusted_digest = self._production_package(root)
+            result = bootstrap_forward_node(
+                package,
+                install_root=self.repo_root,
+                runtime_root=root / "runtime path-đ",
+                ops_root=root / "ops path-空",
+                expected_git_sha=self.repo_sha,
+                expected_trusted_manifest_digest=trusted_digest,
+                python_executable=sys.executable,
+                require_windows=False,
+                platform_name="TEST_ONLY",
+            )
+            self.assertEqual(result["bootstrap_status"], "PASS")
+            self.assertFalse(result["activation_ready"])
 
     def test_package_tamper_and_missing_index_fail_closed(self) -> None:
         with TemporaryDirectory() as directory:
@@ -234,12 +437,13 @@ class ForwardNodeOpsTests(unittest.TestCase):
     def test_bootstrap_is_idempotent_and_never_creates_auth_or_run(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            package = self._package(root)
+            package, trusted_digest = self._production_package(root)
             runtime = root / "runtime"
             ops = root / "ops"
             first = bootstrap_forward_node(
                 package, install_root=self.repo_root, runtime_root=runtime, ops_root=ops,
                 expected_git_sha=self.repo_sha, python_executable=sys.executable,
+                expected_trusted_manifest_digest=trusted_digest,
                 require_windows=False, platform_name="TEST_ONLY",
             )
             preserved = runtime / "telemetry" / "operator-preserved.txt"
@@ -247,6 +451,7 @@ class ForwardNodeOpsTests(unittest.TestCase):
             second = bootstrap_forward_node(
                 package, install_root=self.repo_root, runtime_root=runtime, ops_root=ops,
                 expected_git_sha=self.repo_sha, python_executable=sys.executable,
+                expected_trusted_manifest_digest=trusted_digest,
                 require_windows=False, platform_name="TEST_ONLY",
             )
             self.assertEqual(first["config_path"], second["config_path"])
@@ -266,6 +471,7 @@ class ForwardNodeOpsTests(unittest.TestCase):
                     runtime_root=runtime,
                     ops_root=ops,
                     expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest=sha256_file(root / "package/manifest.json"),
                     python_executable=sys.executable,
                     require_windows=False,
                     platform_name="TEST_ONLY",
@@ -466,7 +672,7 @@ class ForwardNodeOpsTests(unittest.TestCase):
         # TEST_ONLY kiểm tra stop gate; không giả danh Windows thật.
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            package = self._package(root)
+            package, trusted_digest = self._production_package(root)
             with self.assertRaisesRegex(NodeOpsError, "WINDOWS_REQUIRED"):
                 bootstrap_forward_node(
                     package,
@@ -474,6 +680,7 @@ class ForwardNodeOpsTests(unittest.TestCase):
                     runtime_root=root / "runtime",
                     ops_root=root / "ops",
                     expected_git_sha=self.repo_sha,
+                    expected_trusted_manifest_digest=trusted_digest,
                     python_executable=sys.executable,
                     require_windows=True,
                     platform_name="Linux",
