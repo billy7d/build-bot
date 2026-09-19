@@ -97,10 +97,10 @@ merge.
 
 **COMMIT:** `27e4a7b` (`feat: add fail-closed MT5 telemetry watchdog`).
 
-**PUSH_STATUS:** `PENDING`.
+**PUSH_STATUS:** `SUCCESS` — branch `codex/mt5-v26-v63-recovery-watchdog` pushed to `origin`.
 
-**PR_URL:** `PENDING` (branch targets PR #6’s forward-node operations line; no
-merge is performed).
+**PR_URL:** https://github.com/billy7d/build-bot/pull/new/codex/mt5-v26-v63-recovery-watchdog
+(branch targets PR #6’s forward-node operations line; no merge is performed).
 
 ## Remaining blockers
 
