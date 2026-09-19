@@ -95,7 +95,7 @@ merge.
 
 **CI_RESULT:** `PENDING` until the branch is pushed and exact-head CI runs.
 
-**COMMIT:** `c481976` (`feat: add fail-closed MT5 telemetry watchdog`).
+**COMMIT:** `c481976` (watchdog implementation) + `9a45145` (explicit health-state classifications).
 
 **PUSH_STATUS:** `SUCCESS` — branch `codex/mt5-v26-v63-recovery-watchdog` pushed to `origin`.
 
