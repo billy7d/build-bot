@@ -439,7 +439,7 @@ def _extract_timestamp(record: Mapping[str, Any]) -> datetime | None:
 
 def _telemetry_check(spec: MT5InstanceSpec, now: datetime, warning: int, critical: int) -> dict[str, Any]:
     path = spec.telemetry_path
-    result: dict[str, Any] = {"path": str(path), "exists": path.is_file(), "schema": spec.telemetry_schema, "records": 0, "valid_records": 0, "invalid_records": 0, "last_timestamp_utc": None, "age_seconds": None, "sequence_status": "UNVERIFIED", "source_identity": None, "size_bytes": None, "last_write_time_utc": None}
+    result: dict[str, Any] = {"path": str(path), "exists": path.is_file(), "schema": spec.telemetry_schema, "records": 0, "valid_records": 0, "invalid_records": 0, "last_timestamp_utc": None, "age_seconds": None, "sequence_status": "UNVERIFIED", "source_identity": None, "size_bytes": None, "last_write_time_utc": None, "broker_status": None}
     if not path.is_file():
         result.update({"status": "MISSING", "reasons": ["TELEMETRY_FILE_MISSING"]})
         return result
@@ -470,6 +470,10 @@ def _telemetry_check(spec: MT5InstanceSpec, now: datetime, warning: int, critica
                 timestamp = _extract_timestamp(value)
                 if timestamp is not None:
                     last_timestamp = timestamp
+                for key in ("connection_status", "broker_status", "terminal_connection"):
+                    if key in value:
+                        result["broker_status"] = str(value[key]).upper()
+                        break
                 for key in ("sequence", "seq", "record_sequence", "sequence_number"):
                     if key in value:
                         try:
@@ -493,9 +497,12 @@ def _telemetry_check(spec: MT5InstanceSpec, now: datetime, warning: int, critica
                 reasons.append("TELEMETRY_WARNING")
             else:
                 result["status"] = "FRESH"
+            if result["broker_status"] in {"DISCONNECTED", "OFFLINE", "NOT_CONNECTED", "CONNECTION_LOST"}:
+                result["status"] = "BROKER_DISCONNECTED"
+                reasons.append("BROKER_DISCONNECTED")
         elif result["valid_records"]:
-            result["status"] = "TIMESTAMP_UNVERIFIED"
-            reasons.append("TELEMETRY_TIMESTAMP_UNVERIFIED")
+            result["status"] = "NO_MARKET_TICK"
+            reasons.append("NO_MARKET_TICK_OR_HEARTBEAT_TIMESTAMP_UNVERIFIED")
         else:
             result["status"] = "INVALID" if result["invalid_records"] else "EMPTY"
             reasons.append("TELEMETRY_NO_VALID_RECORD")
@@ -568,6 +575,7 @@ def inspect_instance(
         "gate_status": "PASS" if not gate_reasons else "BLOCKED",
         "gate_reasons": sorted(set(gate_reasons)),
         "health_status": _health_status(process, telemetry, gate_reasons),
+        "failure_classification": _failure_classification(process, permissions, ea, telemetry),
         "recovery_candidate": not gate_reasons and process["process_status"] == "ABSENT",
         "trading_action": "NONE",
     }
@@ -578,11 +586,35 @@ def _health_status(process: Mapping[str, Any], telemetry: Mapping[str, Any], gat
         return "CRITICAL"
     if process.get("process_status") == "ABSENT":
         return "CRITICAL"
-    if telemetry.get("status") in {"TELEMETRY_STALE", "MISSING", "INVALID", "READ_ERROR", "TIMESTAMP_UNVERIFIED", "EMPTY"}:
+    if telemetry.get("status") in {"TELEMETRY_STALE", "BROKER_DISCONNECTED", "MISSING", "INVALID", "READ_ERROR", "NO_MARKET_TICK", "EMPTY"}:
         return "WARNING" if telemetry.get("status") == "MISSING" else "CRITICAL"
     if telemetry.get("status") == "WARNING":
         return "WARNING"
     return "HEALTHY"
+
+
+def _failure_classification(process: Mapping[str, Any], permissions: Mapping[str, Any], ea: Mapping[str, Any], telemetry: Mapping[str, Any]) -> str:
+    """Name the observed fault without turning it into an unsafe restart."""
+
+    if process.get("process_status") == "ABSENT":
+        return "TERMINAL_ABSENT"
+    if process.get("process_status") == "UNKNOWN" or process.get("status") == "BLOCKED":
+        return "PROCESS_IDENTITY_UNVERIFIED"
+    if permissions.get("status") != "PASS":
+        return "UNSAFE_TRADING_PERMISSION"
+    if ea.get("status") != "PASS":
+        return "EA_STOPPED_OR_IDENTITY_UNVERIFIED"
+    mapping = {
+        "MISSING": "EXPORTER_STOPPED",
+        "EMPTY": "EXPORTER_STOPPED",
+        "INVALID": "FILE_WRITE_FAILED_OR_CORRUPTED",
+        "READ_ERROR": "FILE_WRITE_FAILED_OR_UNREADABLE",
+        "BROKER_DISCONNECTED": "BROKER_DISCONNECTED",
+        "NO_MARKET_TICK": "NO_MARKET_TICK",
+        "TELEMETRY_STALE": "TELEMETRY_STALE",
+        "WARNING": "TELEMETRY_WARNING",
+    }
+    return mapping.get(str(telemetry.get("status")), "HEALTHY")
 
 
 def watchdog_status(config: WatchdogConfig, *, now: str | datetime | None = None, process_provider: Callable[[], tuple[list[dict[str, Any]], str | None]] | None = None) -> dict[str, Any]:
