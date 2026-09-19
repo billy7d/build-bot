@@ -44,6 +44,12 @@ from .node_ops import (
     verify_deployment_package,
 )
 from .runtime import Phase3Runtime
+from .mt5_watchdog import (
+    load_watchdog_config,
+    recover_once,
+    watchdog_health,
+    watchdog_status,
+)
 
 
 def _common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -238,6 +244,24 @@ def build_parser() -> argparse.ArgumentParser:
     takeover_ack.add_argument("--expected-run-id", default=None)
     takeover_ack.add_argument("--expected-git-sha", default=None)
     takeover_ack.add_argument("--expected-source-identity", default=None)
+
+    watchdog_common = (
+        "mt5-watchdog-status", "mt5-watchdog-health", "mt5-watchdog-recover-once",
+        "mt5-watchdog-dry-run", "mt5-watchdog-start", "mt5-watchdog-stop",
+    )
+    for command_name in watchdog_common:
+        command_help = {
+            "mt5-watchdog-status": "read-only status for isolated MT5 telemetry instances",
+            "mt5-watchdog-health": "read-only health classification for isolated MT5 telemetry instances",
+            "mt5-watchdog-recover-once": "recover at most one absent terminal after all safety gates pass",
+            "mt5-watchdog-dry-run": "show recovery decisions without starting a process",
+            "mt5-watchdog-start": "report watchdog service state; installation is operator-approved only",
+            "mt5-watchdog-stop": "report watchdog service state; no process is stopped by this command",
+        }[command_name]
+        watchdog = commands.add_parser(command_name, help=command_help)
+        watchdog.add_argument("--config", type=Path, required=True, help="MT5 watchdog JSON config")
+        if command_name in {"mt5-watchdog-recover-once", "mt5-watchdog-dry-run"}:
+            watchdog.add_argument("--instance", default=None)
 
     return parser
 
@@ -723,6 +747,41 @@ def _command_takeover_ack(args: argparse.Namespace) -> int:
     )
 
 
+def _watchdog_config(args: argparse.Namespace):
+    try:
+        return load_watchdog_config(args.config)
+    except (OSError, ValueError, TypeError) as exc:
+        raise SystemExit(f"watchdog config rejected: {exc}") from exc
+
+
+def _command_watchdog_status(args: argparse.Namespace) -> int:
+    _print(watchdog_status(_watchdog_config(args)))
+    return 0
+
+
+def _command_watchdog_health(args: argparse.Namespace) -> int:
+    result = watchdog_health(_watchdog_config(args))
+    _print(result)
+    return 0 if result.get("health_status") == "HEALTHY" else 1
+
+
+def _command_watchdog_recover(args: argparse.Namespace, *, dry_run: bool) -> int:
+    result = recover_once(_watchdog_config(args), instance_name=args.instance, dry_run=dry_run)
+    _print(result)
+    return 0 if result.get("status") == "PASS" else 1
+
+
+def _command_watchdog_install_state(args: argparse.Namespace) -> int:
+    _print({
+        "schema": "phase3-mt5-watchdog-install/1",
+        "status": "NOT_INSTALLED_OR_DISABLED",
+        "action": "NONE",
+        "reason": "Operator approval is required before installing or enabling any persistent Windows task/service.",
+        "trading_action": "NONE",
+    })
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -752,6 +811,12 @@ def main(argv: list[str] | None = None) -> int:
         "mt5-preflight": _command_mt5_preflight,
         "takeover-check": _command_takeover_check,
         "takeover-ack": _command_takeover_ack,
+        "mt5-watchdog-status": _command_watchdog_status,
+        "mt5-watchdog-health": _command_watchdog_health,
+        "mt5-watchdog-recover-once": lambda value: _command_watchdog_recover(value, dry_run=False),
+        "mt5-watchdog-dry-run": lambda value: _command_watchdog_recover(value, dry_run=True),
+        "mt5-watchdog-start": _command_watchdog_install_state,
+        "mt5-watchdog-stop": _command_watchdog_install_state,
     }
     return int(commands[args.command](args))
 

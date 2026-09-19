@@ -1,0 +1,62 @@
+{
+  "schema": "phase3-mt5-watchdog/1",
+  "ops_root": "E:\\build-bot-ops\\phase3",
+  "warning_seconds": 120,
+  "critical_seconds": 180,
+  "max_restarts": 2,
+  "restart_window_seconds": 1800,
+  "safety_contract": {
+    "live_execution_enabled": false,
+    "execution_authority": "NONE",
+    "trade_control_authority": "NONE",
+    "forward_authorization": "NOT_CREATED",
+    "forward_run_id": "NOT_CREATED",
+    "auto_trading": false
+  },
+  "instances": [
+    {
+      "name": "V26",
+      "terminal_exe": "D:\\Trading\\MT5-V26\\terminal64.exe",
+      "install_directory": "D:\\Trading\\MT5-V26",
+      "data_directory": "D:\\Trading\\MT5-V26",
+      "profile": "<OPERATOR_VERIFIED_PROFILE>",
+      "ea_name": "<OPERATOR_VERIFIED_EA_NAME>",
+      "ea_ex5_path": "D:\\Trading\\MT5-V26\\MQL5\\Experts\\Advisors\\Phase3CanonicalCandidate.ex5",
+      "preset_path": "D:\\Trading\\MT5-V26\\MQL5\\Presets\\phase3-canonical-v26-telemetry.set",
+      "account_identity": "<OPERATOR_VERIFIED_ACCOUNT>",
+      "server_identity": "<OPERATOR_VERIFIED_SERVER>",
+      "telemetry_path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\phase3-opportunity-observation.jsonl",
+      "telemetry_schema": "phase3-opportunity-observation/1",
+      "approved_ex5_sha256": null,
+      "approved_preset_sha256": null,
+      "trading_permission_evidence_path": "<OPERATOR_ATTESTATION_PATH>\\v26-trading-disabled.json",
+      "ea_status_evidence_path": "<OPERATOR_ATTESTATION_PATH>\\v26-ea-status.json",
+      "launch_args": [],
+      "allow_portable": false,
+      "chart_symbol": "<OPERATOR_VERIFIED_SYMBOL>",
+      "timeframe": "<OPERATOR_VERIFIED_TIMEFRAME>"
+    },
+    {
+      "name": "V63",
+      "terminal_exe": "D:\\Trading\\MT5-V63\\terminal64.exe",
+      "install_directory": "D:\\Trading\\MT5-V63",
+      "data_directory": "D:\\Trading\\MT5-V63",
+      "profile": "<OPERATOR_VERIFIED_PROFILE>",
+      "ea_name": "<OPERATOR_VERIFIED_EA_NAME>",
+      "ea_ex5_path": "D:\\Trading\\MT5-V63\\MQL5\\Experts\\Advisors\\Phase3CanonicalCandidate.ex5",
+      "preset_path": "D:\\Trading\\MT5-V63\\MQL5\\Presets\\phase3-canonical-v63-telemetry.set",
+      "account_identity": "<OPERATOR_VERIFIED_ACCOUNT>",
+      "server_identity": "<OPERATOR_VERIFIED_SERVER>",
+      "telemetry_path": "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\phase3-opportunity-observation.jsonl",
+      "telemetry_schema": "phase3-opportunity-observation/1",
+      "approved_ex5_sha256": null,
+      "approved_preset_sha256": null,
+      "trading_permission_evidence_path": "<OPERATOR_ATTESTATION_PATH>\\v63-trading-disabled.json",
+      "ea_status_evidence_path": "<OPERATOR_ATTESTATION_PATH>\\v63-ea-status.json",
+      "launch_args": [],
+      "allow_portable": false,
+      "chart_symbol": "<OPERATOR_VERIFIED_SYMBOL>",
+      "timeframe": "<OPERATOR_VERIFIED_TIMEFRAME>"
+    }
+  ]
+}
