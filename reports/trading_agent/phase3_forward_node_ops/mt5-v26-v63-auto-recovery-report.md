@@ -6,14 +6,16 @@ artifacts and does not modify them.
 
 ## Evidence and recovery result
 
-**V26_ROOT_CAUSE:** `PROCESS_ABSENT` in the current WMI process snapshot. The
-historical “Algo Trading error before shutdown” note is not independently
-confirmed from a timestamped V26 journal/Experts log available to this run;
-therefore no causal claim is made and recovery is hard-stopped.
+**V26_ROOT_CAUSE:** `PROCESS_ABSENT` in the current WMI process snapshot.
+`242FBE...\\MQL5\\Logs\\20260914.log` does contain 10:29:11.190 entries where
+the EA's trade requests were rejected with `auto trading disabled by client`.
+That proves the safety block, not that it caused DEINIT; no adjacent terminal
+exit/OnDeinit record proves the shutdown cause, so recovery is hard-stopped.
 
-**V63_ROOT_CAUSE:** `PROCESS_ABSENT` in the current WMI process snapshot. No
-independent V63 OnDeinit/process-exit evidence was available to attribute a
-different cause; recovery is hard-stopped.
+**V63_ROOT_CAUSE:** `PROCESS_ABSENT` in the current WMI process snapshot. The
+V63 data-directory logs show a different broker/account identity than the
+target contract and no matching 10:29:11 OnDeinit/process-exit evidence;
+identity remains unverified and recovery is hard-stopped independently.
 
 **V26_PROCESS_BEFORE:** No `terminal64.exe` process returned by a read-only
 `Win32_Process` query. Exact executable exists at
