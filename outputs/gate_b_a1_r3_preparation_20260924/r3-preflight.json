@@ -1,0 +1,59 @@
+{
+  "schema": "gate-b-a1-r3-preflight/1",
+  "timestamp_utc": "2026-09-24T16:17:37.6772506Z",
+  "identity": "MSI\\CodexSandboxOffline",
+  "privilege": {
+    "administrator_group_member": false,
+    "token_is_elevated": false,
+    "integrity_level": "MEDIUM",
+    "privileged_action": "NOT_RUN_OPERATOR_EXECUTION_REQUIRED"
+  },
+  "failed_install": {
+    "root": "C:\\Program Files\\MetaTrader 5",
+    "canonical_path": "C:\\Program Files\\MetaTrader 5",
+    "exists": true,
+    "reparse_points_found": false,
+    "file_count": 583,
+    "directory_count": 19,
+    "manifest_sha256": "AA6FC32521EE4BECB29317FB21A476F837E0B4EE7C54397431E55154F48FFB1C",
+    "terminal_sha256": "F61ECFAD618A4577DF6743EB10E21CFEB2C374EA66BA8D4813C2C0CCCA784D33",
+    "terminal_version": "5.0.0.6182",
+    "terminal_signature": "Valid",
+    "terminal_signer": "CN=MetaQuotes Ltd., O=MetaQuotes Ltd., S=Lemesos, C=CY",
+    "uninstaller_sha256": "F15EEAE5E46DB7E94AFC2786C059266107E4AAED663B3318AFD4A3FC86D4F972",
+    "uninstaller_signature": "Valid",
+    "registry_install_location": "C:\\Program Files\\MetaTrader 5",
+    "registry_uninstall_string": "C:\\Program Files\\MetaTrader 5\\uninstall.exe",
+    "unexpected_user_artifacts": 0,
+    "status": "PASS_MATCHES_A1R_BASELINE"
+  },
+  "v26": {
+    "root": "D:\\Trading\\MT5-V26",
+    "canonical_path": "D:\\Trading\\MT5-V26",
+    "file_count": 582,
+    "baseline_manifest_sha256": "623BA3C04786F4CF8220324F5D222EB013B5936F5D80DE7DADA6043BB024A843",
+    "added": 0,
+    "removed": 0,
+    "hash_or_size_changed": 0,
+    "timestamp_changed": 0,
+    "status": "PASS_PRE_CLEANUP_ONLY"
+  },
+  "approved_destination": {
+    "root": "D:\\Trading\\MT5-GateB-Acceptance",
+    "exists": false
+  },
+  "system_reference_checks": {
+    "processes": "DEFERRED_ACCESS_DENIED_NON_ADMIN",
+    "services": "DEFERRED_ACCESS_DENIED_NON_ADMIN",
+    "scheduled_tasks": "DEFERRED_ACCESS_DENIED_NON_ADMIN",
+    "startup_commands": "DEFERRED_ACCESS_DENIED_NON_ADMIN",
+    "registry_run_entries_referencing_failed_root": 0
+  },
+  "preserved_paths": [
+    "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\D0E8209F77C8CF37AD8BF550E51FF075",
+    "C:\\Users\\billy\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common"
+  ],
+  "audit_warning": "R1 derived flag wrong_root_created_after_a1_start=false conflicts with exact UTC timestamps. Root creation at 2026-09-22T14:39:12.2328917Z is 44.570 seconds after A1 install start at 2026-09-22T14:38:27.6626996Z; exact timestamps and live root CreationTimeUtc agree. Prior evidence was preserved unchanged.",
+  "cleanup_performed": false,
+  "reinstall_performed": false
+}

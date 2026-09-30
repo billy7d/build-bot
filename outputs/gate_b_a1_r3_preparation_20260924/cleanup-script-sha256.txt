@@ -1,0 +1,4 @@
+Path: D:\Trading\buildbot\tools\gate_b_a1_cleanup_admin.ps1
+SHA-256: B796894C7F9969C9BFC615CDC912F9F4AC8331FA2BB09CB39C97BD4435943BA4
+Verified UTC: 2026-09-24T16:17:37Z
+PowerShell parse: PASS

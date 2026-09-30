@@ -1,0 +1,191 @@
+{
+  "schema": "pr6-gate-c-lite-policy-proposal/1",
+  "proposal_id": "PR6-C-LITE-20260919",
+  "policy_status": "APPROVED",
+  "effective": true,
+  "source_contracts": [
+    "windows-24x7-acceptance-20260917/AcceptanceRoot/final-operator-acceptance-20260919T032715Z/execution-plan.md",
+    "windows-24x7-acceptance-20260917/AcceptanceRoot/final-operator-acceptance-20260919T032715Z/operational-acceptance.json",
+    "windows-24x7-acceptance-20260917/AcceptanceRoot/final-operator-acceptance-20260919T032715Z/merge-readiness.json",
+    "docs/trading_agent/forward_ops/BOOTSTRAP.md",
+    "docs/trading_agent/forward_ops/FORWARD_HANDOFF.md",
+    "docs/trading_agent/forward_ops/FORWARD_RUNBOOK.md",
+    "docs/trading_agent/forward_ops/RECOVERY.md"
+  ],
+  "frozen_contracts_unchanged": true,
+  "old_gate_c": {
+    "scope": "FULL_OPERATIONAL_ACCEPTANCE",
+    "required": [
+      "CLEAN_WINDOWS_BASELINE",
+      "TRUSTED_BOOTSTRAP",
+      "HANDOFF",
+      "HEALTH",
+      "BACKUP",
+      "ISOLATED_RESTORE",
+      "TAKEOVER",
+      "WINDOWS_RECOVERY",
+      "LONG_DURATION_STABILITY"
+    ],
+    "environment": "APPROVED_CLEAN_WINDOWS_NODE_OR_VM"
+  },
+  "new_gate_c_lite": {
+    "scope": "MSI_ACCEPTANCE_RUNTIME_SMOKE_ONLY",
+    "environment": "EXISTING_MSI_WITH_NEW_EMPTY_ACCEPTANCE_ROOTS",
+    "checks": [
+      "C1_TRUSTED_BOOTSTRAP",
+      "C2_HEALTH_AND_STATE",
+      "C3_BACKUP_AND_ISOLATED_RESTORE",
+      "C4_SAFETY_INVARIANTS"
+    ],
+    "valid_result_classes": [
+      "PRODUCTION_SMOKE_PASS",
+      "TEST_ONLY_PASS",
+      "BLOCKED"
+    ],
+    "does_not_prove": [
+      "CLEAN_WINDOWS_PROVENANCE",
+      "VM_ISOLATION",
+      "WINDOWS_LOCK_LOGOFF_REBOOT_OPERATIONAL_TESTS",
+      "CROSS_MACHINE_TAKEOVER",
+      "LONG_DURATION_STABILITY",
+      "24_7_READINESS",
+      "PRODUCTION_ACTIVATION_READINESS"
+    ]
+  },
+  "approval_schemas": {
+    "policy_approval": {
+      "schema": "pr6-gate-c-lite-policy-approval/1",
+      "purpose": "Operator approval of Gate C Lite scope, deferred tests and limits only",
+      "required_fields": [
+        "approval_type",
+        "proposal_id",
+        "policy_status",
+        "operator_id",
+        "approved_at_utc",
+        "approved_scope",
+        "deferred_tests",
+        "deferred_tests_remain_open",
+        "acknowledged_limits",
+        "merge_authority",
+        "activation_authority"
+      ],
+      "required_values": {
+        "approval_type": "POLICY_APPROVAL",
+        "policy_status": "APPROVED",
+        "approved_scope": "MSI_ACCEPTANCE_RUNTIME_C1_C4_ONLY",
+        "deferred_tests_remain_open": "YES",
+        "deferred_tests": [
+          "CLEAN_WINDOWS_BOOTSTRAP",
+          "WINDOWS_LOCK_LOGOFF_REBOOT_OPERATIONAL_TESTS",
+          "WINDOWS_RECOVERY",
+          "CROSS_MACHINE_TAKEOVER",
+          "LONG_DURATION_STABILITY"
+        ],
+        "acknowledged_limits": "YES",
+        "merge_authority": "NONE",
+        "activation_authority": "NONE"
+      },
+      "must_not_assert_execution_prerequisites": true
+    },
+    "execution_approval": {
+      "schema": "pr6-gate-c-lite-execution-approval/1",
+      "purpose": "Operator approval to execute C1-C4 after current evidence-backed prerequisites pass",
+      "required_fields": [
+        "approval_type",
+        "proposal_id",
+        "execution_status",
+        "operator_id",
+        "approved_at_utc",
+        "approved_scope",
+        "evidence",
+        "prerequisites",
+        "c3_data_source",
+        "merge_authority",
+        "activation_authority"
+      ],
+      "required_values": {
+        "approval_type": "EXECUTION_APPROVAL",
+        "execution_status": "APPROVED",
+        "approved_scope": "MSI_ACCEPTANCE_RUNTIME_C1_C4_ONLY",
+        "merge_authority": "NONE",
+        "activation_authority": "NONE"
+      },
+      "prerequisites": {
+        "gate_a": "PASS",
+        "gate_b": "PASS",
+        "package_trust": "PASS",
+        "non_trading_enforcement": "PASS",
+        "mt5_preflight": "PASS",
+        "real_telemetry": "PASS",
+        "acceptance_roots_empty_and_separate": "PASS",
+        "scheduler_disabled": "PASS",
+        "execution_authority_none": "PASS"
+      },
+      "evidence_paths_required_for": [
+        "gate_a",
+        "gate_b",
+        "package_trust",
+        "non_trading_enforcement",
+        "mt5_preflight",
+        "real_telemetry"
+      ],
+      "c3_data_source_fields": [
+        "mode",
+        "evidence_path",
+        "runtime_path",
+        "runtime_sha256"
+      ]
+    }
+  },
+  "c3_data_source_rule": {
+    "allowed_modes": [
+      "VERIFIED_REAL_COPIED",
+      "ISOLATED_FIXTURE"
+    ],
+    "verified_real_copied": {
+      "contract_copy_permission_required": true,
+      "actual_source_evidence_required": true,
+      "runtime_path_under_acceptance_root_required": true,
+      "runtime_sha256_required": true,
+      "checkpoint_required": true
+    },
+    "isolated_fixture": {
+      "test_only_required": true,
+      "isolated_required": true,
+      "production_use_forbidden": true,
+      "runtime_sha256_required": true
+    },
+    "missing_or_unverified_result": "BLOCKED",
+    "fixture_result": "TEST_ONLY_PASS",
+    "prohibited_actions": [
+      "CREATE_AUTHORIZATION",
+      "CREATE_FORWARD_RUN",
+      "START_COLLECTOR_TO_GENERATE_DATA"
+    ]
+  },
+  "preconditions": {
+    "policy_approval": "REQUIRED_APPROVED",
+    "execution_approval": "REQUIRED_APPROVED",
+    "execution_prerequisites": "REQUIRED_PASS_AS_REAL_EVIDENCE"
+  },
+  "policy_approval_record": "D:\\Trading\\acceptance\\pr6-c-lite-20260919\\policy-approval.json",
+  "execution_approval_record": null,
+  "current_result": {
+    "gate_c_policy_approved": "YES",
+    "c1_bootstrap": "NOT_RUN_EXECUTION_APPROVAL_PENDING",
+    "c2_health": "NOT_RUN_EXECUTION_APPROVAL_PENDING",
+    "c3_backup_restore": "NOT_RUN_EXECUTION_APPROVAL_PENDING",
+    "c4_safety": "NOT_RUN_EXECUTION_APPROVAL_PENDING",
+    "gate_c_lite": "NOT_RUN",
+    "merge_ready": "NO",
+    "activation_ready": "NO"
+  },
+  "safety": {
+    "live_trading": "NO",
+    "order_placement": "NO",
+    "execution_authority": "NONE",
+    "trade_control_authority": "NONE",
+    "scheduler": "DISABLED",
+    "production_runtime_change": "NO"
+  }
+}

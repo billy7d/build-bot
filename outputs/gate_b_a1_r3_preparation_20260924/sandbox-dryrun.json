@@ -1,0 +1,48 @@
+{
+  "schema": "gate-b-a1r3-sandbox-dryrun-summary/1",
+  "timestamp_utc": "2026-09-24T16:17:37.6772506Z",
+  "command": "D:\\Trading\\buildbot\\tools\\gate_b_a1_cleanup_admin.ps1 -DryRun",
+  "identity": "MSI\\CodexSandboxOffline",
+  "administrator_group_member": false,
+  "token_is_elevated": false,
+  "integrity_level": "MEDIUM",
+  "markers": [
+    "ADMIN_REQUIRED",
+    "TARGET_FINGERPRINT=PASS",
+    "V26_PRE_R3=PASS",
+    "ADMIN_READ_CHECKS_DEFERRED count=4",
+    "DRY_RUN_CORE_CHECKS=PASS",
+    "DRY_RUN_STATUS=INCOMPLETE_ADMIN_READ_CHECKS"
+  ],
+  "target_fingerprint": {
+    "root": "C:\\Program Files\\MetaTrader 5",
+    "file_count": 583,
+    "directory_count": 19,
+    "manifest_sha256": "AA6FC32521EE4BECB29317FB21A476F837E0B4EE7C54397431E55154F48FFB1C",
+    "terminal_sha256": "F61ECFAD618A4577DF6743EB10E21CFEB2C374EA66BA8D4813C2C0CCCA784D33",
+    "terminal_version": "5.0.0.6182",
+    "terminal_signature": "Valid",
+    "uninstaller_sha256": "F15EEAE5E46DB7E94AFC2786C059266107E4AAED663B3318AFD4A3FC86D4F972"
+  },
+  "v26_pre_cleanup": {
+    "root": "D:\\Trading\\MT5-V26",
+    "file_count": 582,
+    "baseline_manifest_sha256": "623BA3C04786F4CF8220324F5D222EB013B5936F5D80DE7DADA6043BB024A843",
+    "added": 0,
+    "removed": 0,
+    "hash_or_size_changed": 0,
+    "timestamp_changed": 0,
+    "status": "PASS"
+  },
+  "deferred_admin_checks": [
+    "processes: Access denied",
+    "services: Access denied",
+    "scheduled_tasks: Access denied",
+    "startup_commands: Access denied"
+  ],
+  "actions_performed": [],
+  "registry_action": "NOT_RUN",
+  "script_exit_code": 20,
+  "result": "CORE_PASS_FULL_ELEVATED_DRYRUN_STILL_REQUIRED",
+  "evidence_directory_created": false
+}
