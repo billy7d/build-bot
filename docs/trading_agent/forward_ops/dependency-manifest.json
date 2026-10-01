@@ -1,0 +1,17 @@
+{
+  "schema": "phase3-forward-dependency-manifest/1",
+  "scope": "agent.phase3 forward node operations",
+  "python": {
+    "minimum": "3.11",
+    "recommended": "3.11.x",
+    "dependency_strategy": "stdlib_only_for_runtime_node_ops"
+  },
+  "third_party_packages": [],
+  "lock_status": "PASS_STDLIB_ONLY",
+  "audit": {
+    "method": "static import audit of agent.phase3 and transitive project modules",
+    "network_install_required": false,
+    "model_retraining_required": false,
+    "note": "Các pipeline research tùy chọn có thể có dependency riêng; bootstrap forward không tự cài hoặc retrain chúng."
+  }
+}
