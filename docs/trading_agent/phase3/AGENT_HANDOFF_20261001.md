@@ -180,3 +180,67 @@ The remote must be `origin` at the project GitHub URL and the pushed branch must
 be `main`. The next agent should treat the pushed commit as the reproducible
 starting point and this document as the operational boundary, not as evidence
 that any blocked runtime gate has passed.
+
+## Addendum — 2026-10-01 (operator directive from machine 2)
+
+This addendum supersedes the "Recommended next-agent sequence" **only for
+Phase 3.1 forward data collection**. The Gate B / A1-R3 / Gate C Lite / PR #6
+boundaries above are unchanged and remain `BLOCKED` / operator-gated.
+
+### Node roles
+
+```text
+MACHINE_1 = MT5 demo terminals (V26, V63) + Phase 3.1 forward collector
+MACHINE_2 = operator / research node (HUNGPC): review, analysis, Phase 4 research
+```
+
+### Directive
+
+Operator `billy7d` directed on 2026-10-01 that the agent on machine 1 set up
+and start Phase 3.1 forward shadow collection for V26 (V63 optional), following
+`docs/trading_agent/phase3/MACHINE1_FORWARD_COLLECTION_HANDOFF_20261001.md`.
+Credentials, demo-account login and Algo Trading enablement stay with the
+operator. Collector authority stays `execution_mode=NONE`.
+
+### Changes in this commit
+
+- `outputs/presets/83_v26_forward_demo_p3obs.set` and
+  `outputs/presets/84_v63_forward_demo_p3obs.set`: byte-identical copies of the
+  Phase 3.1 execution-parity candidate presets (79/80 plus
+  `ExportPhase3OpportunityJsonl=true`, `ExportPhase3OpportunityInTester=true`).
+  The old 79/80 presets never emitted the primary opportunity stream, which is
+  why `FORWARD_SAMPLE_COUNT` could not grow. `.gitattributes` marks both files
+  `-text` so their SHA-256 survives `core.autocrlf`.
+- `docs/trading_agent/phase3/MACHINE1_FORWARD_COLLECTION_HANDOFF_20261001.md`:
+  step-by-step machine-1 procedure, stop conditions and reporting contract.
+- `docs/trading_agent/PHASE4_ACCELERATED_LEARNING_DESIGN.md` (v2): Phase 4
+  research design after operator review. Approved now: 4.0 collector, 4A
+  offline replay engine, 4B data inventory, 4R registry/holdout lock. Not
+  approved: model training 4C, challenger deploy 4D, holdout opening, any new
+  preset into forward.
+- `.gitignore`: `outputs/machine1_transfer_*/` (local model/index transfer).
+
+### Verified on machine 2 before this commit
+
+```text
+git main == origin/main (fast-forwarded 11 commits to 3c7f544)
+py -3 -m compileall -q agent                      PASS (Python 3.11.9)
+py -3 -m unittest discover -s agent/tests         95/95 PASS
+validate-bundle                                   BUNDLE_VALID p3-bundle-577e5dfd…
+build-history-index (phase1-validation-postfix)   row_count=1002, rows_fingerprint=7e972c3a… (matches Phase 3.1)
+start-shadow smoke (temp DB) / status-runtime     SHADOW_READY, integrity ok / config loads, execution_mode=NONE
+```
+
+Not verified (machine 1 only): MT5 compile on the demo terminals, demo account
+identity, real opportunity stream, authorization, scheduled task, collector
+uptime.
+
+### Next steps
+
+1. Operator copies `model_bundle.json` and `history_index.json` from
+   `E:\build-bot\outputs\machine1_transfer_20261001\` (machine 2) to machine 1
+   and checks `SHA256SUMS.txt`.
+2. Agent on machine 1 runs the machine-1 handoff and pushes its activation
+   report on branch `ops/machine1-forward-activation-20261001`.
+3. Machine 2 reviews the report (health/coverage only; outcomes stay sealed
+   per Phase 4 design §6.4) and in parallel starts 4R and 4A.

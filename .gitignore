@@ -33,3 +33,6 @@ reports/trading_agent/phase2/phase2_state.json
 reports/trading_agent/phase2/model_bundle.json
 reports/trading_agent/phase2/similarity_results.json
 
+
+# Local transfer bundles (model state / history index) copied to machine 1 by the operator.
+outputs/machine1_transfer_*/
