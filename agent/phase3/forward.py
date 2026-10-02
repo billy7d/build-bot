@@ -767,6 +767,24 @@ class SingleInstanceLock:
         self.release()
 
 
+def _windows_pid_alive(pid: int) -> bool:
+    # os.kill(pid, 0) calls TerminateProcess on Windows and would kill the process being probed.
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return kernel32.GetLastError() == 5  # access denied means the process exists
+    try:
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code)):
+            return False
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
 def _pid_alive(pid: Any) -> bool:
     try:
         value = int(pid)
@@ -774,6 +792,8 @@ def _pid_alive(pid: Any) -> bool:
         return False
     if value <= 0:
         return False
+    if os.name == "nt":
+        return _windows_pid_alive(value)
     try:
         os.kill(value, 0)
     except ProcessLookupError:
