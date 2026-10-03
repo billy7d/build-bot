@@ -414,7 +414,7 @@ def _command_prepare_forward(args: argparse.Namespace) -> int:
 
 def _forward_collector(args: argparse.Namespace, *, resume: bool) -> int:
     config = _runtime_config(args)
-    authorization_path = Path(args.authorization) if args.authorization else config.authorization_path
+    authorization_path = Path(args.authorization) if getattr(args, "authorization", None) else config.authorization_path
     try:
         authorization, bundle, model, index = validate_forward_authorization(
             authorization_path,

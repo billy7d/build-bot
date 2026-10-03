@@ -365,5 +365,23 @@ def sqlite3_count(path: Path, table: str) -> int:
         connection.close()
 
 
+class PidAliveTests(unittest.TestCase):
+    def test_pid_alive_detects_live_and_exited_process_without_killing_it(self) -> None:
+        import subprocess
+        import sys
+
+        from agent.phase3.forward import _pid_alive
+
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            self.assertTrue(_pid_alive(child.pid))
+            self.assertIsNone(child.poll())
+        finally:
+            child.terminate()
+            child.wait()
+        self.assertFalse(_pid_alive(child.pid))
+        self.assertTrue(_pid_alive(os.getpid()))
+
+
 if __name__ == "__main__":
     unittest.main()
