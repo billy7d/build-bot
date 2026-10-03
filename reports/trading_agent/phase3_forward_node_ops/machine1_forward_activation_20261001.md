@@ -80,3 +80,17 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
 
 - Operator quyết định sửa lỗi 3 và 5 bằng PR riêng; sau khi merge phải `prepare-forward` lại và khởi động lại collector (HEAD đổi).
 - Operator quyết định bật collector V63.
+
+## Cập nhật 2026-10-03: sự cố heartbeat và run mới
+
+- **PR #7 đã merge** vào `main` (`82f26986832e7bb92d4759e83c37c4de767bcdeb`): sửa `--authorization`, `status-runtime` không còn giết collector, installer dùng `-LogonType Interactive`. Checkout runtime đã `pull --ff-only` về commit này khi cả hai collector đang dừng.
+- **Run V26 cũ `P3-FWD-20261002T043335Z-b429704a92a8` bị FAILED** lúc 2026-10-02T17:12:32Z: `[WinError 5] Access is denied` khi collector đổi tên `state\heartbeat.json.tmp` đè `heartbeat.json`. Nguyên nhân khả dĩ nhất là task watchdog (do agent cài) đọc `heartbeat.json` mỗi 2 phút bằng `Get-Content`, không chia sẻ quyền xóa/đổi tên. Chưa chứng minh. Run FAILED không resume được (`failed FORWARD run cannot be resumed`); DB và state được giữ nguyên làm bằng chứng.
+- **Khoảng trống dữ liệu V26:** collector không chạy từ 17:12Z đến khoảng 06:09Z (khoảng 13 giờ). Các bản ghi opportunity xuất hiện trong khoảng này vẫn nằm trong file nhưng không thuộc run mới (run mới bind ở cuối file lúc start), nên **không tính là mẫu forward**.
+- **Watchdog đã sửa**: đọc heartbeat với `FileShare.ReadWrite | Delete`. Lưu ý: watchdog chỉ khởi động lại khi `collector_status=RUNNING` mà heartbeat cũ quá 180 giây; trạng thái FAILED vẫn cần operator xử lý.
+- **Gate evidence chạy lại tại SHA mới**: 96/96 unit test, 27/27 replay/parity, 9/9 `test_phase3_1`, smoke `m1-smoke-202610030608` = `SHADOW_READY`, integrity ok.
+- **Run mới (start 2026-10-03):**
+  - V26: `P3-FWD-20261003T060939Z-82f26986832e`, bind offset 11138, task `BuildBot-Phase3-Forward`.
+  - V63: `P3-FWD-20261003T060928Z-82f26986832e`, bind offset 5582 (4 bản ghi hợp lệ trước thời điểm bind), task `BuildBot-Phase3-Forward-V63`, runtime root `D:\Trading\build-bot-runtime\phase3-v63`.
+  - Cả hai: `RUNNING`, `CONNECTED`, `execution_mode=NONE`, `live_execution_enabled=false`, authorized SHA `82f26986832e7bb92d4759e83c37c4de767bcdeb`.
+- **Authorization:** V63 `p3-auth-15cdc6e01fd9373d61502627`; V26 có authorization mới tại cùng SHA.
+- Collector V63 được bật theo chỉ đạo của operator ngày 2026-10-02/03; file opportunity V63 có bản ghi đầu tiên trong khoảng 2026-10-03 (giờ máy sáng).
