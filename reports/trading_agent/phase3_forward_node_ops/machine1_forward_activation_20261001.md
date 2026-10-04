@@ -94,3 +94,17 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
   - Cả hai: `RUNNING`, `CONNECTED`, `execution_mode=NONE`, `live_execution_enabled=false`, authorized SHA `82f26986832e7bb92d4759e83c37c4de767bcdeb`.
 - **Authorization:** V63 `p3-auth-15cdc6e01fd9373d61502627`; V26 có authorization mới tại cùng SHA.
 - Collector V63 được bật theo chỉ đạo của operator ngày 2026-10-02/03; file opportunity V63 có bản ghi đầu tiên trong khoảng 2026-10-03 (giờ máy sáng).
+
+## Cập nhật 2026-10-04: lỗi heartbeat lặp lại, PR #8 và run mới
+
+- **Cả hai run ngày 2026-10-03 đều FAILED:**
+  - V63 `P3-FWD-20261003T060928Z-82f26986832e` lúc 14:32:33Z với `[WinError 5] Access is denied` khi đổi tên `heartbeat.json`. Lỗi lặp lại dù watchdog đã đọc file với delete-share, nên watchdog không phải (hoặc không chỉ là) nguyên nhân. Nghi phần mềm quét file (Defender/indexer) giữ file ngắn hạn; chưa kiểm chứng.
+  - V26 `P3-FWD-20261003T060939Z-82f26986832e`: heartbeat ngừng khoảng 09:38Z trong trạng thái RUNNING, DB ghi run FAILED. Watchdog khởi động lại lúc 09:42:32Z (`heartbeat_age=245s`) nhưng bị `failed FORWARD run cannot be resumed`. Lý do gốc không được lưu (DB không có cột lỗi, heartbeat bị ghi đè khi watchdog thử lại); phù hợp với cùng lỗi ghi heartbeat.
+- **Khoảng trống dữ liệu:** V26 không có collector từ khoảng 09:38Z ngày 03/10 đến 14:53Z ngày 04/10; V63 từ 14:32Z ngày 03/10 đến 14:53Z ngày 04/10. Bản ghi trong các khoảng này vẫn nằm trong file nhưng không thuộc run nào, nên không tính là mẫu forward.
+- **PR #8 đã merge** (`a939c4485161b6a9f84716a73659844002c4af9b`): `_atomic_json_write` thử lại việc đổi tên khi gặp `PermissionError` (backoff tổng khoảng 6 giây) trước khi fail.
+- **Gate chạy lại tại SHA mới:** 98/98 unit test, 27/27 replay/parity, 11/11 `test_phase3_1`, `BUNDLE_VALID`, smoke `m1-smoke-202610041453` = `SHADOW_READY`.
+- **Run mới (2026-10-04):**
+  - V26: `P3-FWD-20261004T145311Z-a939c4485161`, authorization `p3-auth-c5711939ac85f87236e1e532`, bind offset 15305.
+  - V63: `P3-FWD-20261004T145323Z-a939c4485161`, authorization `p3-auth-a232deb73f2283513c49233a`, bind offset 9748.
+  - `status-runtime --json` (an toàn sau PR #7): cả hai `persistent_runtime_status=RUNNING`, `telemetry_status=CONNECTED`, `execution_mode=NONE`, `live_execution_enabled=false`.
+- **Khuyến nghị operator:** cân nhắc thêm ngoại lệ Windows Defender cho `D:\Trading\build-bot-runtime` (cài đặt bảo mật, operator tự quyết).
