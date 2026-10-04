@@ -64,6 +64,21 @@ def _read_json(path: str | Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+_REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
+
+
+def _replace_with_retry(source: Path, target: Path) -> None:
+    # Windows refuses to replace a file another process (antivirus, indexer, a reader) holds open
+    # without delete sharing. That lock is brief, so retry before failing the run.
+    for delay in _REPLACE_RETRY_DELAYS:
+        try:
+            source.replace(target)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    source.replace(target)
+
+
 def _atomic_json_write(path: str | Path, payload: Mapping[str, Any]) -> None:
     """Ghi state local theo kiểu thay thế nguyên file để heartbeat không dở dang."""
 
@@ -84,7 +99,7 @@ def _atomic_json_write(path: str | Path, payload: Mapping[str, Any]) -> None:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        temporary.replace(target)
+        _replace_with_retry(temporary, target)
     finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()

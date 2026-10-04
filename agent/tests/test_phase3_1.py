@@ -383,5 +383,40 @@ class PidAliveTests(unittest.TestCase):
         self.assertTrue(_pid_alive(os.getpid()))
 
 
+class AtomicJsonWriteRetryTests(unittest.TestCase):
+    def test_replace_retries_transient_permission_error(self) -> None:
+        from agent.phase3 import forward
+
+        original = Path.replace
+        calls = {"count": 0}
+
+        def flaky_replace(self: Path, target: Path) -> Path:
+            calls["count"] += 1
+            if calls["count"] <= 2:
+                raise PermissionError(5, "Access is denied")
+            return original(self, target)
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "heartbeat.json"
+            with patch.object(Path, "replace", flaky_replace), patch.object(forward.time, "sleep"):
+                forward._atomic_json_write(target, {"collector_status": "RUNNING"})
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["collector_status"], "RUNNING")
+            self.assertEqual(calls["count"], 3)
+            self.assertEqual([p.name for p in Path(directory).iterdir()], ["heartbeat.json"])
+
+    def test_replace_gives_up_after_persistent_permission_error(self) -> None:
+        from agent.phase3 import forward
+
+        def always_denied(self: Path, target: Path) -> Path:
+            raise PermissionError(5, "Access is denied")
+
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "heartbeat.json"
+            with patch.object(Path, "replace", always_denied), patch.object(forward.time, "sleep"):
+                with self.assertRaises(PermissionError):
+                    forward._atomic_json_write(target, {"collector_status": "RUNNING"})
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+
 if __name__ == "__main__":
     unittest.main()
