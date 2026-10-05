@@ -12,7 +12,8 @@ from ..scoring.train import ModelBundle
 from ..similarity.index import HistoricalSimilarityIndex
 from ..similarity.models import SimilarityConfig
 from ..memory.database import connect_database
-from .bundle import freeze_bundle, validate_bundle, write_bundle_manifest
+from .bundle import freeze_bundle, persist_bundle, validate_bundle, write_bundle_manifest
+from .campaign import CampaignError, campaign_coverage, declare_campaign, evaluate_campaign, sync_campaign_runs
 from .config import Phase3Config
 from .evaluation.metrics import evaluate_forward_records
 from .evaluation.reporting import write_phase3_reports
@@ -127,6 +128,23 @@ def build_parser() -> argparse.ArgumentParser:
     runtime_status = commands.add_parser("status-runtime", help="show persistent collector machine status")
     _common_arguments(runtime_status)
     runtime_status.add_argument("--json", action="store_true", help="emit JSON output")
+
+    declare = commands.add_parser(
+        "campaign-declare",
+        help="declare a forward campaign that pools every eligible FORWARD run of the frozen bundle",
+    )
+    _common_arguments(declare)
+    declare.add_argument("--campaign-id", default=None, help="defaults to campaign_id in the runtime config")
+    declare.add_argument("--window-start-utc", required=True, help="runs started at or after this UTC time are members")
+
+    for name, text in (
+        ("campaign-sync", "attach every eligible FORWARD run to the campaign (no manual selection)"),
+        ("campaign-status", "show campaign members, sample count and coverage gaps"),
+        ("evaluate-campaign", "evaluate resolved outcomes pooled across campaign runs"),
+    ):
+        command = commands.add_parser(name, help=text)
+        _common_arguments(command)
+        command.add_argument("--campaign-id", default=None, help="defaults to campaign_id in the runtime config")
 
     return parser
 
@@ -468,6 +486,85 @@ def _command_status_runtime(args: argparse.Namespace) -> int:
     return 0
 
 
+def _campaign_runtime(args: argparse.Namespace) -> tuple[Any, Phase3Runtime, str]:
+    config = _runtime_config(args)
+    campaign_id = getattr(args, "campaign_id", None) or config.campaign_id
+    if not campaign_id:
+        raise SystemExit("campaign command requires --campaign-id or campaign_id in the runtime config")
+    bundle = _load_bundle(Path(config.bundle_manifest))
+    runtime = Phase3Runtime.open(
+        config.db,
+        bundle,
+        config=Phase3Config(mode="FORWARD", bundle_id=bundle.bundle_id, telemetry_source=config.telemetry_source, db_path=str(config.db)),
+    )
+    return config, runtime, str(campaign_id)
+
+
+def _command_campaign_declare(args: argparse.Namespace) -> int:
+    config, runtime, campaign_id = _campaign_runtime(args)
+    try:
+        persist_bundle(runtime.connection, runtime.bundle)
+        campaign = declare_campaign(
+            runtime.connection,
+            campaign_id=campaign_id,
+            bundle_id=runtime.bundle.bundle_id,
+            window_start_utc=str(args.window_start_utc),
+            primary_source_schema=config.primary_opportunity_schema,
+            canonical_schema=config.canonical_schema,
+            canonicalizer_version=config.canonicalizer_version,
+            canonicalizer_fingerprint=config.canonicalizer_fingerprint,
+            now=runtime.clock(),
+        )
+        membership = sync_campaign_runs(runtime.connection, campaign_id, now=runtime.clock())
+    except (CampaignError, ValueError) as exc:
+        raise SystemExit(f"campaign declaration refused: {exc}") from exc
+    finally:
+        runtime.close()
+    _print({"status": "CAMPAIGN_DECLARED", "campaign": campaign, "membership": membership})
+    return 0
+
+
+def _command_campaign_sync(args: argparse.Namespace) -> int:
+    _, runtime, campaign_id = _campaign_runtime(args)
+    try:
+        _print({"status": "CAMPAIGN_SYNCED", **sync_campaign_runs(runtime.connection, campaign_id, now=runtime.clock())})
+    except CampaignError as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        runtime.close()
+    return 0
+
+
+def _command_campaign_status(args: argparse.Namespace) -> int:
+    from .campaign import campaign_sample_count
+
+    _, runtime, campaign_id = _campaign_runtime(args)
+    try:
+        _print({
+            "status": "CAMPAIGN_STATUS",
+            "sample_counts": campaign_sample_count(runtime.connection, campaign_id),
+            "coverage": campaign_coverage(runtime.connection, campaign_id),
+            "execution_mode": "NONE",
+            "live_execution_enabled": False,
+        })
+    except CampaignError as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        runtime.close()
+    return 0
+
+
+def _command_evaluate_campaign(args: argparse.Namespace) -> int:
+    _, runtime, campaign_id = _campaign_runtime(args)
+    try:
+        _print(evaluate_campaign(runtime, campaign_id))
+    except CampaignError as exc:
+        raise SystemExit(str(exc)) from exc
+    finally:
+        runtime.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -485,6 +582,10 @@ def main(argv: list[str] | None = None) -> int:
         "resume-forward": lambda value: _forward_collector(value, resume=True),
         "stop-forward": _command_stop_forward,
         "status-runtime": _command_status_runtime,
+        "campaign-declare": _command_campaign_declare,
+        "campaign-sync": _command_campaign_sync,
+        "campaign-status": _command_campaign_status,
+        "evaluate-campaign": _command_evaluate_campaign,
     }
     return int(commands[args.command](args))
 
