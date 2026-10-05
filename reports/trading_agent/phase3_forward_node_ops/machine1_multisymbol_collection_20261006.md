@@ -45,3 +45,26 @@ Không có mã nào bị bỏ.
 
 - Trạng thái task snapshot hằng ngày và số dòng mỗi file sau 24 giờ.
 - Giờ giao dịch từng mã và `tick_value`.
+
+## Cập nhật 2026-10-06: contract spec v2 (tick value và giờ giao dịch)
+
+Đọc bằng script trong terminal MT5-DATA lúc 2026-10-05T18:13:45Z, lưu ở `D:\Trading\build-bot-runtime\phase4-data\contract_specs_20261006_v2.json` (schema `machine1-contract-specs/2`). Không có tài khoản hay server.
+
+| Mã | contract size | digits | point | tick size | tick value | min lot | step | spread hiện tại (points) |
+|---|---|---|---|---|---|---|---|---|
+| ETHUSD | 1 | 2 | 0.01 | 0.01 | 0.01 | 0.1 | 0.01 | 70 |
+| XAUUSD | 100 | 3 | 0.001 | 0.001 | 0.1 | 0.01 | 0.01 | 168 |
+| EURUSD | 100000 | 5 | 0.00001 | 0.00001 | 1.0 | 0.01 | 0.01 | 6 |
+
+Giờ giao dịch theo giờ server của broker (server trừ UTC = 0 giây tại thời điểm đo):
+
+- **ETHUSD:** 24/7 (00:00-00:00 mọi ngày).
+- **XAUUSD:** CN 22:01-24:00; T2–T5 00:00-20:58 và 22:00-24:00; T6 00:00-20:58; T7 nghỉ.
+- **EURUSD:** CN 21:05-24:00; T2–T5 24h; T6 00:00-20:59; T7 nghỉ.
+
+Lưu ý: spread XAUUSD lúc đo (168 points) cao vì ngoài giờ thanh khoản; không dùng làm đại diện. Sau khi đọc spec, MT5-DATA được khởi động lại một lần (bình thường).
+
+## Task đã cài (operator đồng ý 2026-10-05)
+
+- `BuildBot-Phase4-DataSnapshot`: hằng ngày 00:30 giờ máy, chạy thử thành công; snapshot đầu có 3 file 0 dòng.
+- `BuildBot-MT5-DATA-Autostart`, `BuildBot-MT5-V26-Autostart`, `BuildBot-MT5-V63-Autostart`: mở terminal khi đăng nhập Windows (chờ 30s/30s/45s). Chưa thử; lần khởi động lại máy đầu tiên là lần thử thật.
