@@ -1,7 +1,7 @@
-# Phase 4 — Thiết kế học tăng tốc cho Trading Agent (v2)
+# Phase 4 — Thiết kế học tăng tốc cho Trading Agent (v2.1)
 
-Trạng thái: `PROPOSAL v2 / DUYỆT CÓ ĐIỀU KIỆN`
-Ngày: 2026-10-01
+Trạng thái: `PROPOSAL v2.1 / DUYỆT CÓ ĐIỀU KIỆN`
+Ngày: 2026-10-01 (v2), 2026-10-05 (v2.1)
 Phạm vi: nghiên cứu, offline và shadow. Tài liệu này **không** cấp quyền thực thi, không thăng hạng
 model, không đưa preset mới vào forward và không chấp thuận giao dịch.
 
@@ -20,6 +20,7 @@ BASELINE_CONTROL=V26
 |---|---|
 | v1 | Đề xuất ban đầu: C1 replay engine, C2 dữ liệu đa thị trường, C3 meta-labeling, C4 challenger, C5 agent loop |
 | v2 | Tích hợp review của operator và đối chiếu repo: kê khai dữ liệu đã dùng (§2), sửa holdout (§6.1), mốc thời gian chung cho model gộp (§5.3), phạm vi tin cậy của parity theo loại dữ liệu (§5.1), nhãn không phải mẫu độc lập (§5.2), khai báo trước hiệu chỉnh đa phép thử (§6.2), registry bắt đầu từ đầu (§6.3), trạng thái `INCONCLUSIVE`, tách G5 (§7), bảo vệ dữ liệu forward (§6.4), sửa định nghĩa domain theo `EntryTF` |
+| v2.1 | Sau khi đọc cơ chế memory/reflection của TauricResearch/TradingAgents (commit `1394a3f`): thêm rò rỉ qua kiến thức sẵn có của LLM (§6.6), thời điểm biết được `known_at_utc` và truy vấn `as_of` cho registry (§6.3), bài học phải là kết quả gộp có thống kê thay vì reflection theo từng mẫu (§5.5), phân loại holdout theo nguồn gốc giả thuyết (§6.1) |
 
 ### 0.1 Phạm vi được duyệt ngay
 
@@ -270,6 +271,25 @@ Chu trình: giả thuyết (ghi trước) → cấu hình (hash) → chạy C1/C
 - Không được: sửa `.mq5` hoặc preset đang forward, tạo authorization, thêm challenger, mở holdout, đọc
   outcome forward ngoài lịch, merge, bật bất kỳ thứ gì trên runtime.
 
+**Bài học là kết quả gộp, không phải reflection theo từng mẫu.**
+
+TradingAgents cho LLM viết 2–4 câu "bài học" sau **mỗi** quyết định dựa trên alpha 5 ngày của đúng quyết
+định đó, rồi đưa các bài học gần nhất vào prompt. Cách này học từ nhiễu của từng mẫu và không có thống kê.
+C5 không áp dụng cách đó:
+
+- Đơn vị bài học là **một thí nghiệm** trong registry, kèm n (số event), CI, family và trạng thái hiệu
+  chỉnh (§6.2). Không có bài học từ một lệnh hay một opportunity đơn lẻ.
+- LLM được viết tóm tắt cho thí nghiệm, nhưng mọi khẳng định định lượng phải trích từ trường của registry.
+  Văn bản không có số liệu đối chiếu được thì không được dùng làm căn cứ.
+- Khi agent tìm bài học cho vòng mới, truy vấn registry theo family, giả thuyết hoặc domain, với
+  `as_of` (§6.3), không chọn theo độ gần thời gian.
+- Kết quả `NO_EDGE` và `INCONCLUSIVE` cũng là bài học và phải được trả về trong truy vấn, để agent không
+  lặp lại giả thuyết đã thử.
+
+**Nguồn gốc giả thuyết.** Mỗi giả thuyết ghi `hypothesis_origin`:
+`HUMAN` (operator), `LLM_GENERATED`, hoặc `DATA_DERIVED` (sinh tự động từ thống kê trên dữ liệu không
+thuộc holdout). Trường này quyết định holdout nào còn hợp lệ cho ứng viên (§6.1, §6.6).
+
 ---
 
 ## 6. Kiểm soát overfit
@@ -285,6 +305,10 @@ Chu trình: giả thuyết (ghi trước) → cấu hình (hash) → chạy C1/C
   dấu `CONSUMED` trong §2. Không mở lại cùng holdout cho ứng viên được chỉnh sau khi đã biết kết quả.
 - Khi không còn lịch sử sạch, báo cáo phải ghi rõ: xác nhận độc lập chỉ còn dựa vào dữ liệu forward mới.
 - Riêng BTCUSD H1 không có holdout lịch sử (§2) và chỉ xác nhận bằng forward.
+- **Holdout lịch sử chỉ sạch với giả thuyết không do LLM tạo ra.** Với ứng viên có
+  `hypothesis_origin=LLM_GENERATED`, mọi khoảng lịch sử trước mốc kiến thức của model sinh giả thuyết bị
+  coi là đã nhiễm (§6.6). Ứng viên đó chỉ được xác nhận độc lập bằng dữ liệu **sau** mốc kiến thức, trên
+  thực tế là dữ liệu forward.
 
 ### 6.2 Khai báo trước và hiệu chỉnh đa phép thử
 
@@ -307,7 +331,17 @@ Số phép thử phải tính mọi lựa chọn đã ảnh hưởng kết quả
 - Registry append-only, **hoạt động trước thí nghiệm model đầu tiên** (trước 4C), không chờ 4E.
 - Mỗi bản ghi gồm: `experiment_id`, giả thuyết, family, metric chính, config hash, code SHA, dataset
   fingerprint, split và holdout version, dependency lock hash, kết quả, trạng thái
-  (`REJECTED`/`CANDIDATE`/`PROMOTED`), lý do.
+  (`REJECTED`/`CANDIDATE`/`PROMOTED`), lý do, `hypothesis_origin`, model và mốc kiến thức của LLM
+  tham gia (nếu có).
+- **Thời điểm biết được.** Mỗi kết quả ghi `known_at_utc`: thời điểm kết quả trở nên biết được đối với
+  người hoặc agent (lúc thí nghiệm hoàn tất, hoặc lúc mở outcome forward theo lịch §6.4). Đây là tương
+  đương của `resolution_date` trong TradingAgents.
+- **Truy vấn `as_of`.** Khi một vòng nghiên cứu hoặc một mô phỏng quá trình nghiên cứu được thiết kế tại
+  mốc T, agent chỉ đọc các kết quả có `known_at_utc <= T`. Bản ghi thiếu `known_at_utc` bị loại khỏi
+  truy vấn `as_of` (di chuyển dữ liệu theo hướng bảo thủ).
+- **Kỹ thuật lưu trữ:** append-only, ghi atomic (file tạm rồi `replace`), khóa một tiến trình ghi tại một
+  thời điểm, idempotent theo `experiment_id`. Bản ghi đã có kết quả không bị sửa; đính chính là một bản
+  ghi mới tham chiếu bản cũ.
 - Ngân sách: trần `K=50` mỗi vòng; **vòng đầu tối đa 20**. Tổng số phép thử trên cùng dữ liệu được
   **cộng dồn qua các vòng**, không đặt lại về 0.
 
@@ -328,6 +362,28 @@ Dữ liệu forward trên máy 1 là holdout thật duy nhất của BTCUSD H1.
   trong registry.
 - Runtime máy 1 giữ tối thiểu, không thêm dependency research.
 - Evidence pack ghi lock hash của môi trường.
+
+### 6.6 Rò rỉ qua kiến thức sẵn có của LLM
+
+Bộ lọc thời gian chỉ chặn được rò rỉ từ **dữ liệu đưa vào**. Nó không chặn được những gì LLM đã học từ
+dữ liệu huấn luyện. Một LLM có mốc kiến thức tháng 06/2026 có thể đã "biết" diễn biến BTC, ETH, vàng và
+EURUSD trong 2025–2026, kể cả khi agent chỉ được cấp dữ liệu đến 2024. TradingAgents gặp đúng giới hạn
+này: bộ lọc `as_of` của họ chặn bài học có kết quả sau ngày run, nhưng agent và reflector vẫn là LLM viết
+ở hiện tại về quá khứ.
+
+Áp dụng cho Phase 4:
+
+| Quy định | Nội dung |
+|---|---|
+| Ghi mốc kiến thức | Mọi bước có LLM tham gia (sinh giả thuyết, chọn feature, viết tóm tắt dùng làm căn cứ) ghi model id và mốc kiến thức đã công bố vào registry |
+| Holdout theo nguồn gốc | `LLM_GENERATED`: chỉ dữ liệu sau mốc kiến thức là sạch. `HUMAN` và `DATA_DERIVED`: dùng holdout §6.1 như bình thường. Operator chịu trách nhiệm xác nhận một giả thuyết thật sự là `HUMAN` |
+| Không dùng LLM ở vòng chấm điểm | Evaluator, nhãn, metric và quyết định PASS/FAIL là code tất định, không gọi LLM |
+| LLM không chấm runtime | Collector và bundle trên máy 1 không gọi LLM. Dự đoán phải tái lập được từ bundle đã đóng băng |
+| Đổi model | Khi đổi sang model có mốc kiến thức mới hơn, mọi khoảng lịch sử trước mốc mới bị coi là đã nhiễm đối với giả thuyết do model đó sinh ra |
+| Báo cáo | Evidence pack của ứng viên `LLM_GENERATED` ghi rõ: kết quả trên lịch sử trước mốc kiến thức chỉ có giá trị sàng lọc, không phải xác nhận độc lập |
+
+Hệ quả: dữ liệu forward do máy 1 thu từ 2026-10 là nguồn xác nhận sạch duy nhất cho mọi ứng viên do agent
+đề xuất. Điều này củng cố quyết định bảo vệ outcome forward ở §6.4.
 
 ---
 
@@ -380,6 +436,9 @@ Thứ tự bắt buộc: 4R trước 4C; P3/P4 trước nhãn `core_exit_r`; 4E 
 | Nhãn đếm trùng mẫu | Một event một nhóm split/bootstrap (§5.2) |
 | EA không chuyển giao sang mã khác | Kiểm kê domain trước khi gộp; so sánh model chỉ BTC với model gộp |
 | Dữ liệu forward bị nhiễm | §6.4: chỉ health/coverage; outcome theo lịch |
+| LLM đã biết giai đoạn holdout từ dữ liệu huấn luyện | §6.6: ghi nguồn gốc giả thuyết và mốc kiến thức; ứng viên `LLM_GENERATED` chỉ xác nhận bằng dữ liệu sau mốc |
+| Học từ nhiễu của từng mẫu | §5.5: bài học là thí nghiệm có n và CI; không dùng reflection theo từng mẫu |
+| Agent dùng kết quả chưa biết tại thời điểm thiết kế | §6.3: `known_at_utc` và truy vấn `as_of` |
 | Agent vượt quyền | §5.5; runtime chỉ nhận config có hash và operator duyệt |
 | Kỳ vọng sai | Mọi báo cáo ghi: kết quả backtest và shadow không phải lợi nhuận thực thi |
 
