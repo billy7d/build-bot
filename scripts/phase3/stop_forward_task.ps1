@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$RuntimeConfig = 'E:\build-bot-runtime\phase3\config\forward.json',
     [string]$TaskName = 'BuildBot-Phase3-Forward'
@@ -48,10 +48,13 @@ if ($null -ne $task) {
     }
 }
 
+# `if` là câu lệnh, không phải biểu thức: `(if ...)` bị Windows PowerShell hiểu là tên lệnh "if".
+$taskState = if ($null -ne $task) { [string](Get-ScheduledTask -TaskName $TaskName).State } else { 'Absent' }
+
 [pscustomobject]@{
     status = 'TASK_STOP_REQUESTED'
     task_name = $TaskName
-    task_state = [string](if ($null -ne $task) { (Get-ScheduledTask -TaskName $TaskName).State } else { 'Absent' })
+    task_state = $taskState
     collector_stop = $stopResult
     mt5_touched = $false
 } | ConvertTo-Json -Depth 8
