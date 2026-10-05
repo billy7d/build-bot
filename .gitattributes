@@ -1,3 +1,6 @@
 # Byte-preserved forward presets: SHA-256 is part of the forward evidence contract.
 outputs/presets/83_v26_forward_demo_p3obs.set -text
 outputs/presets/84_v63_forward_demo_p3obs.set -text
+outputs/presets/85_v26_data_ethusd_h1_p3obs.set -text
+outputs/presets/86_v26_data_xauusd_h1_p3obs.set -text
+outputs/presets/87_v26_data_eurusd_h1_p3obs.set -text
