@@ -108,3 +108,17 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
   - V63: `P3-FWD-20261004T145323Z-a939c4485161`, authorization `p3-auth-a232deb73f2283513c49233a`, bind offset 9748.
   - `status-runtime --json` (an toàn sau PR #7): cả hai `persistent_runtime_status=RUNNING`, `telemetry_status=CONNECTED`, `execution_mode=NONE`, `live_execution_enabled=false`.
 - **Khuyến nghị operator:** cân nhắc thêm ngoại lệ Windows Defender cho `D:\Trading\build-bot-runtime` (cài đặt bảo mật, operator tự quyết).
+
+## Cập nhật 2026-10-05: campaign và resilience (migration 010)
+
+- **SHA mới:** `258b550384ebed08c6e0516b951a55d38d6a906f`. Checkout runtime `pull --ff-only` khi cả hai collector đã dừng.
+- **Trước khi nâng cấp:** hai run ngày 04/10 bị watchdog khởi động lại hai lần trong ngày 05/10 (16:32Z và 17:30Z), mỗi lần cả V26 và V63 cùng im 3,5–4,5 phút rồi tiếp tục cùng run và offset, không mất bản ghi. Nguyên nhân (một thứ bên ngoài ngắt tiến trình) chưa rõ.
+- **Dừng và sao lưu:** watchdog được tắt tạm khi bảo trì. `stop_forward_task.ps1` lỗi cú pháp trên Windows PowerShell 5.1 (`The term 'if' is not recognized`) nhưng vẫn disable task và tiến trình đã dừng. Run chỉ sang `STOPPED` sau khi `resume-forward` chạy ngắn rồi nhận `stop-forward` (collector xóa stop marker khi bắt đầu, nên marker phải ghi sau khi nó chạy). DB sao lưu bằng copy sang `evidence\pre-010-20261005.sqlite` (SHA-256 khớp bản gốc).
+- **Campaign:** `v26-bundle577e-c1` và `v63-bundle577e-c1`, `window_start_utc=2026-10-02T00:00:00Z`, `campaign-declare` thành công, `excluded` rỗng.
+- **Membership (V26):** 3 run cũ (`...20261002T043335Z`, `...20261003T060939Z`, `...20261004T145311Z`) và run mới. **V63:** 2 run cũ (`...20261003T060928Z`, `...20261004T145323Z`) và run mới. Run cũ có `coverage_basis=ESTIMATED_PRE_LIVENESS` nên coverage bị ước thấp (khoảng trống liệt kê bên dưới gồm cả thời gian collector thực ra đang chạy).
+- **Sample count:** `forward_sample_count=0`, `canonical_row_count=0`, `cross_run_duplicate_count=0` cho cả hai (chưa có outcome resolve).
+- **Gaps theo `campaign-status` (giây):** V26 92164 (02→03/10), 117811 (03→04/10), 96253 (04→05/10); V63 117834 (03→04/10), 96253 (04→05/10).
+- **Gate chạy lại tại SHA mới:** 107/107 unit test, 27/27 replay/parity, 11/11 `test_phase3_1`, `BUNDLE_VALID`, smoke `m1-smoke-202610051737` = `SHADOW_READY`.
+- **Run mới:** V26 `P3-FWD-20261005T173724Z-258b550384eb` (authorization `p3-auth-ebd770e243900dea69a61b8e`, bind offset 19471); V63 `P3-FWD-20261005T173736Z-258b550384eb` (authorization `p3-auth-734998ced2bf844840b5b9e0`, bind offset 13913). Offset bind trùng offset lúc dừng nên không mất bản ghi opportunity trong lúc bảo trì.
+- **Kiểm tra:** `status-runtime`: cả hai `RUNNING`, `CONNECTED`, `campaign_id` đúng, `last_failure` rỗng, `execution_mode=NONE`.
+- **Sai lệch:** task scheduled hiện có được bật lại (không cài mới); watchdog bật lại sau khi xong.
