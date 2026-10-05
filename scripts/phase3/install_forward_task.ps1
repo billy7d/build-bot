@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$RuntimeConfig = 'E:\build-bot-runtime\phase3\config\forward.json',
     [string]$TaskName = 'BuildBot-Phase3-Forward',

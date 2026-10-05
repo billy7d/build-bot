@@ -120,3 +120,27 @@ branch `ops/machine1-forward-activation-20261001` (push từ clone báo cáo), g
 - Sau 72 giờ, một mã vẫn có 0 dòng trong khi thị trường mở: dừng, kiểm tra, báo operator (có thể chiến
   lược không phát tín hiệu trên mã đó. Bản thân đây là một kết quả kiểm kê, không phải lý do để chỉnh
   tham số).
+
+## 7. Đính chính: min lot không làm tròn lên (2026-10-06)
+
+Báo cáo máy 1 ghi rằng với ETHUSD (min lot `0.1`) "lệnh ETH sẽ bị làm tròn lên mức tối thiểu". Điều này
+không đúng với EA hiện tại. Trong `BuildRiskPlanForMoney` (và nhánh add của pyramiding), khi
+`rawLots < minLot` EA gán `rp.lots = minLot` **chỉ để tính `actualRiskPct` cho chẩn đoán**, rồi
+`return false` với lý do `raw_lot_below_min_lot`. Lệnh bị **bỏ**, không vào với min lot. Đây cũng là bất biến
+trong README ("không ép lot lên min-lot vì điều đó phá vỡ risk budget").
+
+Hệ quả cho phần thu dữ liệu:
+
+- **Tín hiệu shadow và luồng opportunity không bị ảnh hưởng.** Đường audit shadow không đi qua risk plan
+  nên vẫn ghi mọi tín hiệu, kể cả tín hiệu mà lệnh thật sẽ bị bỏ.
+- **Tài khoản thu dữ liệu sẽ có ít lệnh thật hơn tín hiệu**, nhất là ETHUSD. Với `RiskPerTradePct=0.5`
+  và equity `5,000 USD`, risk mong muốn là `25 USD`. Theo spec đã báo cáo (tick value = tick size = `0.01`,
+  contract size `1`), `riskPerLot` bằng đúng khoảng cách SL (USD), nên `rawLots = 25 / khoảng cách SL`.
+  Lệnh ETHUSD chỉ được mở khi khoảng cách SL `<= 250 USD` (`rawLots >= 0.1`).
+  Với XAUUSD (min lot `0.01`) ngưỡng là `<= 25 USD`; với EURUSD (min lot `0.01`) là `<= 0.025` (250 pip).
+  Các ngưỡng này chỉ đúng khi equity ở mức `5,000 USD`; equity đổi thì ngưỡng đổi theo.
+- **Không chỉnh tham số, risk hay lot để "cho EA vào lệnh".** Đây vẫn là bài đo chiến lược chuyển giao sang
+  mã khác ra sao (§5.2 thiết kế Phase 4).
+
+Trong kiểm kê C2, mỗi domain báo cáo: số tín hiệu shadow, số lần `raw_lot_below_min_lot` (Journal hoặc CSV
+chẩn đoán nếu bật lại), và tỷ lệ giữa hai số này. Domain có tỷ lệ bỏ lệnh cao được ghi `EXCLUDED` kèm lý do.
