@@ -21,7 +21,9 @@ from ..scoring.train import ModelBundle
 from ..similarity.index import HistoricalSimilarityIndex
 from ..similarity.models import SimilarityConfig
 from .bundle import ShadowBundle, validate_bundle
+from .campaign import CampaignError, campaign_sample_count, get_campaign, sync_campaign_runs, validate_campaign_id
 from .config import Phase3Config
+from .health import persist_health_event
 from .ingestion.file_tail import file_source_identity
 from .ingestion.opportunity import CANONICALIZER_FINGERPRINT
 from .models import (
@@ -42,6 +44,8 @@ AUTHORIZATION_SCHEMA = "phase3-forward-authorization/1"
 HISTORY_INDEX_SCHEMA = "phase3-historical-similarity-index/1"
 HEARTBEAT_SCHEMA = "phase3-forward-heartbeat/1"
 DEFAULT_TASK_NAME = "BuildBot-Phase3-Forward"
+# Giới hạn độ dài lỗi lưu vào DB để một exception lớn không làm phình runtime DB.
+_MAX_ERROR_TEXT = 2000
 
 
 class ForwardControlError(RuntimeError):
@@ -145,6 +149,7 @@ class ForwardRuntimeConfig:
     heartbeat_stale_seconds: int = 120
     poll_interval_seconds: float = 5.0
     task_name: str = DEFAULT_TASK_NAME
+    campaign_id: str | None = None
 
     def __post_init__(self) -> None:
         if str(self.execution_mode).upper() != "NONE":
@@ -175,6 +180,11 @@ class ForwardRuntimeConfig:
                 raise ForwardControlError(f"runtime config field is empty: {field_name}")
         if not self.primary_opportunity_path or not str(self.primary_opportunity_path).strip():
             raise ForwardControlError("runtime config requires primary_opportunity_path")
+        if self.campaign_id is not None:
+            try:
+                validate_campaign_id(self.campaign_id)
+            except CampaignError as exc:
+                raise ForwardControlError(str(exc)) from exc
 
     @property
     def root(self) -> Path:
@@ -873,6 +883,53 @@ def _db_runtime_status(
         connection.close()
 
 
+def _db_run_diagnostics(config: ForwardRuntimeConfig, run_id: str | None) -> dict[str, Any]:
+    """Lỗi gần nhất, số lần ghi heartbeat lỗi và campaign; DB cũ trả giá trị rỗng."""
+
+    result: dict[str, Any] = {"last_failure": None, "heartbeat_write_failure_events": 0, "campaign": None}
+    if not config.db.exists():
+        return result
+    connection = connect_database(config.db)
+    try:
+        if run_id:
+            row = connection.execute(
+                "SELECT event_type, value_json, created_at_utc FROM phase3_health_events WHERE run_id = ? AND event_type IN ('RUN_FAILED', 'RUN_START_REFUSED') ORDER BY id DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            if row is not None:
+                try:
+                    value = json.loads(str(row["value_json"]))
+                except (TypeError, ValueError):
+                    value = {}
+                result["last_failure"] = {
+                    "event_type": str(row["event_type"]),
+                    "at_utc": str(row["created_at_utc"]),
+                    **(value if isinstance(value, Mapping) else {}),
+                }
+            result["heartbeat_write_failure_events"] = int(connection.execute(
+                "SELECT COUNT(*) FROM phase3_health_events WHERE run_id = ? AND event_type = 'HEARTBEAT_WRITE_FAILED'",
+                (run_id,),
+            ).fetchone()[0])
+        if config.campaign_id:
+            try:
+                campaign = get_campaign(connection, config.campaign_id)
+                if campaign is not None:
+                    result["campaign"] = {
+                        "campaign_id": campaign["campaign_id"],
+                        "window_start_utc": campaign["window_start_utc"],
+                        **campaign_sample_count(connection, campaign["campaign_id"]),
+                    }
+                else:
+                    result["campaign"] = {"campaign_id": config.campaign_id, "status": "NOT_DECLARED"}
+            except sqlite3.OperationalError:
+                result["campaign"] = {"campaign_id": config.campaign_id, "status": "SCHEMA_NOT_MIGRATED"}
+    except sqlite3.OperationalError:
+        return result
+    finally:
+        connection.close()
+    return result
+
+
 def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = None, now: str | None = None) -> dict[str, Any]:
     """Trả status machine-readable mà không giành collector lock."""
 
@@ -905,6 +962,7 @@ def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = No
     collector_state = str(heartbeat.get("collector_status") or "").upper()
     collector_running = bool(fresh and process_alive and collector_state in {"RUNNING", "WAITING_FOR_SOURCE"})
     db_integrity, sample_count, coverage = _db_runtime_status(config, selected_run_id)
+    diagnostics = _db_run_diagnostics(config, selected_run_id)
     telemetry_available = config.primary_opportunity.is_file()
     offset = heartbeat.get("current_source_offset")
     if offset is None and config.db.exists():
@@ -947,6 +1005,10 @@ def read_runtime_status(config: ForwardRuntimeConfig, *, run_id: str | None = No
         "canonicalizer_version": config.canonicalizer_version,
         "canonicalizer_fingerprint": config.canonicalizer_fingerprint,
         "db_integrity": db_integrity,
+        "heartbeat_write_failures": heartbeat.get("heartbeat_write_failures", 0),
+        "heartbeat_write_failure_events": diagnostics["heartbeat_write_failure_events"],
+        "last_failure": diagnostics["last_failure"],
+        "campaign": diagnostics["campaign"],
         "live_execution_enabled": False,
         "execution_mode": "NONE",
     }
@@ -978,9 +1040,63 @@ class PersistentForwardCollector:
         self._runtime: Phase3Runtime | None = None
         self._lock = SingleInstanceLock(config.lock_path)
         self._stop_requested = False
+        self._heartbeat_consecutive_failures = 0
+        self._heartbeat_failure_total = 0
+        self._loop_started = False
 
     def request_stop(self) -> None:
         self._stop_requested = True
+
+    def _record_event(self, event_type: str, value: Mapping[str, Any], *, severity: str = "INFO") -> None:
+        """Ghi health event cho run; lỗi ghi event không được che lỗi gốc."""
+
+        if self._runtime is None:
+            return
+        try:
+            with self._runtime.connection:
+                persist_health_event(
+                    self._runtime.connection,
+                    self.run_id,
+                    event_type,
+                    value,
+                    severity=severity,
+                    created_at_utc=format_utc_timestamp(self.clock()),
+                )
+        except Exception:
+            pass
+
+    def _note_heartbeat_failure(self, exc: OSError) -> None:
+        self._heartbeat_consecutive_failures += 1
+        self._heartbeat_failure_total += 1
+        consecutive = self._heartbeat_consecutive_failures
+        stale_after = max(1, int(self.config.heartbeat_stale_seconds / self.config.poll_interval_seconds))
+        detail = {
+            "error_type": type(exc).__name__,
+            "error": str(exc)[:_MAX_ERROR_TEXT],
+            "consecutive_failures": consecutive,
+            "total_failures": self._heartbeat_failure_total,
+        }
+        # Ghi lần đầu, lúc watchdog bắt đầu thấy heartbeat stale, rồi thưa dần để DB không phình.
+        if consecutive == 1:
+            self._record_event("HEARTBEAT_WRITE_FAILED", detail, severity="WARN")
+        elif consecutive == stale_after:
+            self._record_event("HEARTBEAT_WRITE_FAILED", {**detail, "heartbeat_stale": True}, severity="ERROR")
+        elif consecutive % 1000 == 0:
+            self._record_event("HEARTBEAT_WRITE_FAILED", detail, severity="ERROR")
+
+    def _record_liveness(self, runtime: Phase3Runtime) -> None:
+        now = format_utc_timestamp(self.clock())
+        with runtime.connection:
+            runtime.connection.execute(
+                """
+                INSERT INTO phase3_forward_run_liveness(run_id, first_cycle_utc, last_cycle_utc, cycle_count)
+                VALUES (?, ?, ?, 1)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    last_cycle_utc = excluded.last_cycle_utc,
+                    cycle_count = phase3_forward_run_liveness.cycle_count + 1
+                """,
+                (self.run_id, now, now),
+            )
 
     def _open_runtime(self) -> Phase3Runtime:
         if self._runtime is None:
@@ -1015,7 +1131,15 @@ class PersistentForwardCollector:
         last_event: Mapping[str, Any] | None = None,
         last_prediction: Mapping[str, Any] | None = None,
         error: str | None = None,
-    ) -> None:
+    ) -> bool:
+        """Ghi heartbeat theo kiểu best-effort.
+
+        Heartbeat chỉ phục vụ giám sát. Lỗi ghi file (thường là antivirus/indexer giữ
+        file trên Windows) được ghi thành health event và collector tiếp tục đọc
+        source; watchdog vẫn phát hiện heartbeat stale như trước. Fail-closed chỉ dành
+        cho lỗi toàn vẹn dữ liệu.
+        """
+
         payload: dict[str, Any] = {
             "schema": HEARTBEAT_SCHEMA,
             "heartbeat_at_utc": format_utc_timestamp(self.clock()),
@@ -1036,7 +1160,23 @@ class PersistentForwardCollector:
         }
         if error:
             payload["error"] = str(error)
-        _atomic_json_write(self.config.heartbeat_path, payload)
+        if self._heartbeat_failure_total:
+            payload["heartbeat_write_failures"] = self._heartbeat_failure_total
+        try:
+            _atomic_json_write(self.config.heartbeat_path, payload)
+        except OSError as exc:
+            self._note_heartbeat_failure(exc)
+            return False
+        if self._heartbeat_consecutive_failures:
+            self._record_event(
+                "HEARTBEAT_WRITE_RECOVERED",
+                {
+                    "consecutive_failures": self._heartbeat_consecutive_failures,
+                    "total_failures": self._heartbeat_failure_total,
+                },
+            )
+            self._heartbeat_consecutive_failures = 0
+        return True
 
     def _bind_source_boundary(self, runtime: Phase3Runtime) -> tuple[str, int] | None:
         source = self.config.primary_opportunity
@@ -1123,7 +1263,17 @@ class PersistentForwardCollector:
             file_format=self.config.telemetry_format,
             expected_schema=self.config.primary_opportunity_schema,
         )
+        self._record_liveness(runtime)
         if result.get("truncated"):
+            self._record_event(
+                "RUN_FAILED",
+                {
+                    "reason": "SOURCE_TRUNCATED",
+                    "source_identity": str(result.get("source_identity") or identity),
+                    "offset_bytes": int(result.get("offset_bytes") or 0),
+                },
+                severity="ERROR",
+            )
             runtime.set_run_status(self.run_id, "FAILED")
             self._heartbeat(
                 collector_status="FAILED",
@@ -1176,6 +1326,7 @@ class PersistentForwardCollector:
             if str(row["status"]) == "FAILED":
                 raise ForwardControlError("failed FORWARD run cannot be resumed")
             runtime.set_run_status(self.run_id, "RUNNING")
+            self._loop_started = True
             self.config.stop_path.unlink(missing_ok=True)
             while not self._stop_requested:
                 if self.config.stop_path.is_file():
@@ -1203,6 +1354,15 @@ class PersistentForwardCollector:
             self._heartbeat(collector_status="STOPPED", telemetry_status="STOPPED")
             return final
         except Exception as exc:
+            self._record_event(
+                "RUN_FAILED" if self._loop_started else "RUN_START_REFUSED",
+                {
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:_MAX_ERROR_TEXT],
+                    "iterations": iterations,
+                },
+                severity="ERROR",
+            )
             try:
                 runtime.set_run_status(self.run_id, "FAILED")
             except Exception:
@@ -1234,6 +1394,10 @@ def create_forward_run(
         clock=utc_now,
     )
     try:
+        if config.campaign_id and get_campaign(runtime.connection, config.campaign_id) is None:
+            raise ForwardControlError(
+                f"campaign {config.campaign_id} is not declared; run campaign-declare before start-forward"
+            )
         run = runtime.create_run(
             run_id,
             mode="FORWARD",
@@ -1242,6 +1406,10 @@ def create_forward_run(
         )
         if str(run.get("git_sha")) != authorization.authorized_git_sha:
             raise AuthorizationError("existing FORWARD run is bound to another git SHA")
+        if config.campaign_id:
+            membership = sync_campaign_runs(runtime.connection, config.campaign_id, now=now or utc_now())
+            if str(run_id) not in membership["member_run_ids"]:
+                raise ForwardControlError(f"run {run_id} is not eligible for campaign {config.campaign_id}")
         _atomic_json_write(
             config.current_run_path,
             {

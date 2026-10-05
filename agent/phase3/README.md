@@ -21,6 +21,10 @@ python -m agent.phase3 start-forward --runtime-config E:\build-bot-runtime\phase
 python -m agent.phase3 resume-forward --runtime-config E:\build-bot-runtime\phase3\config\forward.json --run-id <run-id>
 python -m agent.phase3 stop-forward --runtime-config E:\build-bot-runtime\phase3\config\forward.json --run-id <run-id>
 python -m agent.phase3 status-runtime --runtime-config E:\build-bot-runtime\phase3\config\forward.json --json
+python -m agent.phase3 campaign-declare --runtime-config <forward.json> --campaign-id <id> --window-start-utc <UTC>
+python -m agent.phase3 campaign-sync --runtime-config <forward.json>
+python -m agent.phase3 campaign-status --runtime-config <forward.json>
+python -m agent.phase3 evaluate-campaign --runtime-config <forward.json>
 ```
 
 `freeze-bundle` reads the Phase 1/Phase 2 manifests and the local ignored Phase 2 model artifact when present. The reviewable manifest contains fingerprints and train-only preprocessing metadata, not the model payload. A model artifact and optional historical index can be supplied to replay/start-shadow through `--model-bundle` and `--history-json`.
@@ -72,3 +76,9 @@ The primary opportunity observer writes a separate `phase3-opportunity-observati
 `ForwardRuntimeConfig.primary_opportunity_path` must point at the new opportunity stream before a future authorization can be prepared. The authorization contract records the raw schema, canonical schema, canonicalizer version/fingerprint, source identity, bundle, and code SHA; a legacy execution-candidate file cannot silently become the primary source.
 
 No authorization manifest is created unless the exact current Git SHA, frozen bundle/model/index, replay/smoke/database/one-way gates, and real telemetry source identity all pass. Synthetic or historical records never prove `MT5_TELEMETRY_STATUS=CONNECTED` or `FORWARD_COLLECTION_STATUS=ACTIVE`.
+
+## Forward resilience and campaigns
+
+- **Heartbeat is best-effort.** A failed `heartbeat.json` write (typically antivirus or an indexer holding the file on Windows) is recorded as a `HEARTBEAT_WRITE_FAILED` health event and the collector keeps reading the source. A later successful write records `HEARTBEAT_WRITE_RECOVERED`. The watchdog still sees a stale heartbeat. Fail-closed remains for data-integrity errors such as same-identity truncation.
+- **Failure reasons are persisted.** Every failure writes a `RUN_FAILED` (or `RUN_START_REFUSED`) health event with the exception type and message. `status-runtime` reports `last_failure` and the heartbeat failure counters.
+- **Forward campaign (migration 010).** A FAILED run cannot be resumed, so an incident creates a new run. A campaign pools every FORWARD run of the same bundle and canonicalizer that started at or after a declared `window_start_utc`. Membership is rule-based (no manual run selection). Samples are de-duplicated by `canonical_opportunity_id`, keeping the earliest prediction commit. Gaps between runs are reported as coverage and are never backfilled. Set `campaign_id` in `forward.json`; `start-forward` then refuses to run until the campaign is declared and attaches each new run automatically. Rollout steps: `docs/trading_agent/phase3/FORWARD_CAMPAIGN_ROLLOUT_20261006.md`.
