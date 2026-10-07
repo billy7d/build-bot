@@ -17,6 +17,7 @@ from .campaign import CampaignError, campaign_coverage, declare_campaign, evalua
 from .config import Phase3Config
 from .evaluation.metrics import evaluate_forward_records
 from .evaluation.reporting import write_phase3_reports
+from .late_ingest import late_ingest_rejected_observations
 from .forward import (
     ForwardControlError,
     PersistentForwardCollector,
@@ -136,6 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
     _common_arguments(declare)
     declare.add_argument("--campaign-id", default=None, help="defaults to campaign_id in the runtime config")
     declare.add_argument("--window-start-utc", required=True, help="runs started at or after this UTC time are members")
+
+    late = commands.add_parser(
+        "late-ingest-rejected",
+        help="store timestamp-rejected observations as LATE_NOT_FORWARD evidence (never counted as forward)",
+    )
+    _common_arguments(late)
 
     for name, text in (
         ("campaign-sync", "attach every eligible FORWARD run to the campaign (no manual selection)"),
@@ -565,6 +572,26 @@ def _command_evaluate_campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def _campaign_runtime_optional(args: argparse.Namespace) -> tuple[Any, Phase3Runtime, str | None]:
+    config = _runtime_config(args)
+    bundle = _load_bundle(Path(config.bundle_manifest))
+    runtime = Phase3Runtime.open(
+        config.db,
+        bundle,
+        config=Phase3Config(mode="FORWARD", bundle_id=bundle.bundle_id, telemetry_source=config.telemetry_source, db_path=str(config.db)),
+    )
+    return config, runtime, getattr(config, "campaign_id", None)
+
+
+def _command_late_ingest_rejected(args: argparse.Namespace) -> int:
+    config, runtime, _ = _campaign_runtime_optional(args)
+    try:
+        _print(late_ingest_rejected_observations(runtime.connection))
+    finally:
+        runtime.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -586,6 +613,7 @@ def main(argv: list[str] | None = None) -> int:
         "campaign-sync": _command_campaign_sync,
         "campaign-status": _command_campaign_status,
         "evaluate-campaign": _command_evaluate_campaign,
+        "late-ingest-rejected": _command_late_ingest_rejected,
     }
     return int(commands[args.command](args))
 
