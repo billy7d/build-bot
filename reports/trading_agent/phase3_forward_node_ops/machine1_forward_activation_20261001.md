@@ -122,3 +122,13 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
 - **Run mới:** V26 `P3-FWD-20261005T173724Z-258b550384eb` (authorization `p3-auth-ebd770e243900dea69a61b8e`, bind offset 19471); V63 `P3-FWD-20261005T173736Z-258b550384eb` (authorization `p3-auth-734998ced2bf844840b5b9e0`, bind offset 13913). Offset bind trùng offset lúc dừng nên không mất bản ghi opportunity trong lúc bảo trì.
 - **Kiểm tra:** `status-runtime`: cả hai `RUNNING`, `CONNECTED`, `campaign_id` đúng, `last_failure` rỗng, `execution_mode=NONE`.
 - **Sai lệch:** task scheduled hiện có được bật lại (không cài mới); watchdog bật lại sau khi xong.
+
+## Cập nhật 2026-10-07: lỗi định dạng thời gian MT5 (không có mẫu forward nào được ghi nhận trước đó)
+
+- **Phát hiện:** V26 và V63 `RUNNING`/`CONNECTED` nhưng `raw_observation_count=0`, `forward_sample_count=0`. Bảng `phase3_forward_events` ghi mọi bản ghi opportunity với `validation_status=REJECTED_SCHEMA`, lý do `invalid UTC timestamp: '2026.10.07 05:00:00Z'`. EA ghi thời gian bằng `TimeToString(...) + "Z"` (dạng `YYYY.MM.DD HH:MM:SSZ`), còn `parse_utc_timestamp` chỉ nhận ISO-8601.
+- **Phạm vi:** toàn bộ bản ghi từ 2026-10-02 đến lúc sửa: **V26 15, V63 7 bản ghi bị loại**, 0 bản ghi được nhận. Payload gốc và hash được giữ nguyên trong DB, đã sao lưu bản DB trước khi sửa (`evidence\pre-timestampfix-20261007.sqlite`).
+- **Sửa:** PR #10 (`fix: accept MT5 UTC timestamps in forward ingestion`), merge vào `main` (`44f045bf22b9f3fd054431e43cf17f6e6dee8a26`). Chỉ nhận định dạng MT5 có hậu tố `Z`; thời gian không có `Z`, lệch múi giờ hoặc sai định dạng vẫn bị loại. Phát lại 22 payload bị loại qua bộ kiểm tra đã sửa: 22/22 hợp lệ.
+- **Gate chạy lại tại SHA mới:** 108/108 unit test, 27/27 replay/parity, 12/12 `test_phase3_1`, `BUNDLE_VALID`, smoke `m1-smoke-202610070642` = `SHADOW_READY`.
+- **Run mới (2026-10-07):** V26 `P3-FWD-20261007T064249Z-44f045bf22b9` (authorization `p3-auth-1b3f5b8bcaadd282e28e681e`, bind offset 30627); V63 `P3-FWD-20261007T064300Z-44f045bf22b9` (authorization `p3-auth-223f76791148ef9db0d8546d`, bind offset 18097). Offset bind bằng kích thước file lúc dừng nên không có bản ghi mới nào xuất hiện trong lúc bảo trì. Cả hai `RUNNING`, `CONNECTED`, `campaign_id` đúng.
+- **Chưa quyết (operator):** 22 bản ghi đã bị loại có được nạp lại và tính vào forward hay chỉ giữ làm bằng chứng. Tính đến hiện tại mọi mẫu forward thực sự bắt đầu từ run mới.
+- **MT5-DATA:** terminal này tắt khoảng 21:43Z ngày 05/10 (không rõ lý do) nên ETHUSD/XAUUSD/EURUSD không có dữ liệu từ lúc đó (ba file vẫn 0 dòng, kể cả trước khi tắt). Mở lại 2026-10-07T06:32Z; Algo Trading được operator bật lúc 06:40Z.
