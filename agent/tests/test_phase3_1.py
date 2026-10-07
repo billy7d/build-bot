@@ -418,5 +418,17 @@ class AtomicJsonWriteRetryTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).iterdir()), [])
 
 
+class Mt5TimestampFormatTests(unittest.TestCase):
+    def test_parse_accepts_mt5_time_to_string_with_utc_suffix(self) -> None:
+        from agent.phase3.models import format_utc_timestamp, parse_utc_timestamp
+
+        self.assertEqual(format_utc_timestamp("2026.10.07 05:00:00Z"), "2026-10-07T05:00:00Z")
+        self.assertEqual(format_utc_timestamp("2026.10.07 05:00Z"), "2026-10-07T05:00:00Z")
+        self.assertEqual(format_utc_timestamp("2026-10-07T05:00:00Z"), "2026-10-07T05:00:00Z")
+        for bad in ("2026.10.07 05:00:00", "2026.10.07 05:00:00+02:00", "2026.13.40 05:00:00Z", "garbage"):
+            with self.assertRaises(ValueError, msg=bad):
+                parse_utc_timestamp(bad)
+
+
 if __name__ == "__main__":
     unittest.main()
