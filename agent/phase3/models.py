@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Mapping
@@ -44,6 +45,9 @@ FAILURE_STATES = frozenset({
 OUTCOME_STATUSES = frozenset({"PENDING", "RESOLVED", "INCOMPLETE", "EXPIRED", "INVALID"})
 
 
+_MT5_UTC_TIMESTAMP = re.compile(r"^(\d{4})\.(\d{2})\.(\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)Z$")
+
+
 def parse_utc_timestamp(value: str | datetime) -> datetime:
     """Parse timestamp có timezone và chuẩn hóa về UTC."""
 
@@ -51,6 +55,10 @@ def parse_utc_timestamp(value: str | datetime) -> datetime:
         parsed = value
     else:
         raw = str(value).strip()
+        # MT5 TimeToString writes "YYYY.MM.DD HH:MM[:SS]"; the EA appends "Z" to mark UTC.
+        mt5 = _MT5_UTC_TIMESTAMP.match(raw)
+        if mt5:
+            raw = f"{mt5.group(1)}-{mt5.group(2)}-{mt5.group(3)}T{mt5.group(4)}Z"
         if raw.endswith("Z"):
             raw = raw[:-1] + "+00:00"
         try:
