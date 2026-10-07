@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -260,6 +261,61 @@ class CanonicalOpportunityTelemetryTests(unittest.TestCase):
                 self.assertEqual(second["status"], "REJECTED_DUPLICATE")
                 self.assertEqual(runtime.status("restart-run")["counts"]["predictions"], 1)
                 self.assertEqual(runtime.status("restart-run")["counts"]["raw_observation_count"], 1)
+            finally:
+                runtime.close()
+
+
+class LateIngestRejectedTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle, cls.model, cls.index, _ = _fixture_bundle()
+
+    def test_late_ingest_stores_evidence_without_forward_effects(self) -> None:
+        from agent.phase3.late_ingest import late_ingest_rejected_observations
+
+        with TemporaryDirectory() as directory:
+            runtime = Phase3Runtime.open(
+                Path(directory) / "phase3.sqlite",
+                self.bundle,
+                model_bundle=self.model,
+                similarity_index=self.index,
+                config=Phase3Config(mode="SMOKE", bundle_id=self.bundle.bundle_id),
+            )
+            try:
+                runtime.create_run("late-run", mode="SMOKE", started_at_utc=CLOCK)
+                legacy = _opportunity("legacy", timestamp="2023-01-01T00:00:00Z")
+                runtime._insert_rejection(
+                    "late-run",
+                    legacy,
+                    source="fixture",
+                    reason="invalid UTC timestamp: '2023.01.01 00:00:00Z'",
+                    source_event_id="legacy",
+                    received_at_utc=CLOCK,
+                )
+                other = runtime._insert_rejection(
+                    "late-run", {"garbage": True}, source="fixture", reason="missing fields", source_event_id="other",
+                    received_at_utc=CLOCK,
+                )
+                self.assertEqual(other["status"], "REJECTED_SCHEMA")
+                predictions_before = runtime.connection.execute("SELECT COUNT(*) FROM phase3_predictions").fetchone()[0]
+                result = late_ingest_rejected_observations(runtime.connection, ingested_at_utc="2023-01-02T00:00:00Z")
+                self.assertEqual(result["candidates"], 1)
+                self.assertEqual(result["stored"], 1)
+                self.assertFalse(result["counts_toward_forward"])
+                again = late_ingest_rejected_observations(runtime.connection, ingested_at_utc="2023-01-03T00:00:00Z")
+                self.assertEqual(again["stored"], 0)
+                self.assertEqual(again["already_present"], 1)
+                row = runtime.connection.execute(
+                    "SELECT ingest_class, forward_eligible, canonical_opportunity_id FROM phase3_late_ingested_observations"
+                ).fetchone()
+                self.assertEqual(row["ingest_class"], "LATE_NOT_FORWARD")
+                self.assertEqual(row["forward_eligible"], 0)
+                self.assertTrue(row["canonical_opportunity_id"])
+                for table in ("phase3_predictions", "phase3_opportunity_observations", "phase3_canonical_opportunities"):
+                    count = runtime.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    self.assertEqual(count, predictions_before if table == "phase3_predictions" else 0, table)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    runtime.connection.execute("UPDATE phase3_late_ingested_observations SET forward_eligible = 1")
             finally:
                 runtime.close()
 
