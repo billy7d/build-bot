@@ -132,3 +132,14 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
 - **Run mới (2026-10-07):** V26 `P3-FWD-20261007T064249Z-44f045bf22b9` (authorization `p3-auth-1b3f5b8bcaadd282e28e681e`, bind offset 30627); V63 `P3-FWD-20261007T064300Z-44f045bf22b9` (authorization `p3-auth-223f76791148ef9db0d8546d`, bind offset 18097). Offset bind bằng kích thước file lúc dừng nên không có bản ghi mới nào xuất hiện trong lúc bảo trì. Cả hai `RUNNING`, `CONNECTED`, `campaign_id` đúng.
 - **Chưa quyết (operator):** 22 bản ghi đã bị loại có được nạp lại và tính vào forward hay chỉ giữ làm bằng chứng. Tính đến hiện tại mọi mẫu forward thực sự bắt đầu từ run mới.
 - **MT5-DATA:** terminal này tắt khoảng 21:43Z ngày 05/10 (không rõ lý do) nên ETHUSD/XAUUSD/EURUSD không có dữ liệu từ lúc đó (ba file vẫn 0 dòng, kể cả trước khi tắt). Mở lại 2026-10-07T06:32Z; Algo Trading được operator bật lúc 06:40Z.
+
+## Cập nhật 2026-10-07: 22 bản ghi bị loại đã nạp lại, gắn nhãn LATE_NOT_FORWARD
+
+- **Quyết định operator:** nạp lại nhưng tách khỏi forward (lựa chọn 1).
+- **PR #11** (`feat: store timestamp-rejected observations as LATE_NOT_FORWARD evidence`) merge vào `main` (`da4732b5d88a1002fd44b59cd2de06fa37bbf6d5`): migration 011 (bảng `phase3_late_ingested_observations`, ràng buộc `forward_eligible = 0` và `ingest_class = 'LATE_NOT_FORWARD'`) và lệnh `late-ingest-rejected`.
+- **Chạy trên DB máy 1** từ clone báo cáo (checkout runtime vẫn ở `44f045bf22b9f3fd054431e43cf17f6e6dee8a26`, tracked tree sạch, collector không phải khởi động lại). DB sao lưu bằng SQLite backup trước khi chạy (`evidence\pre-lateingest-20261007.sqlite`).
+  - V26: 15 candidates, 15 stored, 0 still_invalid.
+  - V63: 7 candidates, 7 stored, 0 still_invalid.
+- **Kiểm tra sau khi chạy:** `integrity_check` ok; không có prediction mới từ 22 bản ghi này; các bản ghi hợp lệ của run mới (1 observation, 1 prediction mỗi hệ) không đổi. `counts_toward_forward=false`.
+- **Lưu ý cho máy 2:** DB runtime của máy 1 đã ở migration 011 trong khi checkout runtime còn ở commit chưa có file migration này; code cũ chỉ áp migration còn thiếu nên không ảnh hưởng. Lần cập nhật checkout runtime kế tiếp (phải `prepare-forward` lại) sẽ đồng bộ.
+- **Một sai sót quy trình:** trong khi viết PR #11, một số file được chỉnh nhầm trong checkout runtime trong vài phút trước khi chuyển sang clone báo cáo và khôi phục về `main` sạch. Không có lần khởi động lại collector nào xảy ra trong khoảng đó.
