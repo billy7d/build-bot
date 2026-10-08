@@ -68,3 +68,17 @@ Lưu ý: spread XAUUSD lúc đo (168 points) cao vì ngoài giờ thanh khoản;
 
 - `BuildBot-Phase4-DataSnapshot`: hằng ngày 00:30 giờ máy, chạy thử thành công; snapshot đầu có 3 file 0 dòng.
 - `BuildBot-MT5-DATA-Autostart`, `BuildBot-MT5-V26-Autostart`, `BuildBot-MT5-V63-Autostart`: mở terminal khi đăng nhập Windows (chờ 30s/30s/45s). Chưa thử; lần khởi động lại máy đầu tiên là lần thử thật.
+
+## Cập nhật 2026-10-08: sau 24 giờ chạy liên tục của MT5-DATA
+
+Số liệu lúc 2026-10-08T16:17Z. MT5-DATA chạy liên tục từ 2026-10-07T15:15Z (mở bằng scheduled task); Algo Trading do operator bật 15:20Z. Không đưa vào báo cáo nội dung JSONL, outcome hay PnL.
+
+| File (magic) | Số dòng opportunity | Ghi chú |
+|---|---|---|
+| `...26072701_ETHUSD_H1.jsonl` | 1 | bản ghi duy nhất xuất hiện 2026-10-07 07:00Z, trước lần mở lại |
+| `...26072702_XAUUSD_H1.jsonl` | 0 | |
+| `...26072703_EURUSD_H1.jsonl` | 0 | |
+
+- Trong 25 giờ chạy liên tục không có dòng nào mới ở ba file. Điều kiện dừng "0 dòng sau 72 giờ khi thị trường mở" **chưa đủ** vì MT5-DATA bị tắt từ 2026-10-05T21:43Z đến 2026-10-07T15:15Z; thời gian EA thực sự chạy cho XAUUSD/EURUSD tới nay khoảng 1,5 ngày. Đây vẫn chưa là kết luận về tần suất tín hiệu của chiến lược trên các mã này.
+- Snapshot hằng ngày: đã chạy các ngày 2026-10-06 (17:30Z) và 2026-10-07 (17:30Z); manifest ghi đủ ba file mỗi lần (ETH 1 dòng, XAU/EUR 0 dòng).
+- MT5-DATA từng tắt hai lần (21:43Z ngày 05/10; 07:00Z ngày 07/10). Lần thứ hai có lệnh demo ETHUSD mở lúc 07:00Z (bán 0.3, rủi ro 0,5%) trước khi terminal tắt, nằm không có EA quản lý khoảng 8 giờ đến lúc mở lại. Nghi terminal bị tắt theo phiên làm việc của agent vì được mở từ phiên đó; từ 2026-10-07T15:15Z được mở bằng task nên chạy độc lập, chạy liên tục sau đó.
