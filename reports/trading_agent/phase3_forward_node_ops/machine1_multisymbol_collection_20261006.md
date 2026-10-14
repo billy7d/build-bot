@@ -82,3 +82,17 @@ Số liệu lúc 2026-10-08T16:17Z. MT5-DATA chạy liên tục từ 2026-10-07T
 - Trong 25 giờ chạy liên tục không có dòng nào mới ở ba file. Điều kiện dừng "0 dòng sau 72 giờ khi thị trường mở" **chưa đủ** vì MT5-DATA bị tắt từ 2026-10-05T21:43Z đến 2026-10-07T15:15Z; thời gian EA thực sự chạy cho XAUUSD/EURUSD tới nay khoảng 1,5 ngày. Đây vẫn chưa là kết luận về tần suất tín hiệu của chiến lược trên các mã này.
 - Snapshot hằng ngày: đã chạy các ngày 2026-10-06 (17:30Z) và 2026-10-07 (17:30Z); manifest ghi đủ ba file mỗi lần (ETH 1 dòng, XAU/EUR 0 dòng).
 - MT5-DATA từng tắt hai lần (21:43Z ngày 05/10; 07:00Z ngày 07/10). Lần thứ hai có lệnh demo ETHUSD mở lúc 07:00Z (bán 0.3, rủi ro 0,5%) trước khi terminal tắt, nằm không có EA quản lý khoảng 8 giờ đến lúc mở lại. Nghi terminal bị tắt theo phiên làm việc của agent vì được mở từ phiên đó; từ 2026-10-07T15:15Z được mở bằng task nên chạy độc lập, chạy liên tục sau đó.
+
+## Cập nhật 2026-10-14: XAUUSD/EURUSD kẹt MISSING_STATE cả tuần (lỗi EA khi khởi tạo)
+
+- **Triệu chứng:** sau hơn 100 giờ thị trường mở, `XAUUSD` và `EURUSD` vẫn 0 dòng opportunity (ETHUSD 5 dòng). Log EA của hai mã không có dòng `DIAG` nào từ 2026-10-07T15:16Z.
+- **Bằng chứng (DIAG_SUMMARY lúc OnDeinit, 2026-10-14T11:09Z, cho run từ 2026-10-07T15:20Z):**
+  - ETHUSD: `missingStateBars=0`, shadow `buildFail=0`.
+  - XAUUSD: `missingStateBars=111`, shadow `events=1`, `buildFail=111`.
+  - EURUSD: `missingStateBars=116`, shadow `buildFail=116`.
+  Tức là mọi nến H1 của hai mã đều thất bại ở `BuildState` (cần 260 giá trị RSI/ATR/giá cho D1/H4/H1/M15) và bị bỏ qua.
+- **Lịch sử không thiếu:** script chỉ đọc `DiagBars` (2026-10-14T10:52Z) cho thấy cả ba mã đủ ≥260 nến và `CopyBuffer` RSI/ATR trả đủ 260 ở cả bốn khung, `SERIES_SYNCHRONIZED=1`.
+- **Kết luận (suy luận):** chỉ báo do EA tạo lúc khởi tạo ngay sau khi terminal mở (2026-10-07T15:15Z) bị kẹt ở hai chart này và không tự phục hồi. Khởi tạo lại EA lúc 2026-10-14T11:10Z thì cả hai dựng được trạng thái và in `DIAG` ngay ở nến 11:00Z.
+- **Rủi ro:** lỗi có thể lặp lại ở bất kỳ lần khởi động lại terminal nào (kể cả V26/V63) và không có cảnh báo. Đề xuất cho người phụ trách EA: tạo lại handle chỉ báo hoặc báo lỗi rõ khi `BuildState` thất bại liên tiếp; agent trên máy 1 không sửa EA.
+- **Sai lệch:** XAUUSD/EURUSD đang chạy với `DiagnosticsEveryBars=1` (preset gốc là 24) để theo dõi EA còn xử lý nến hay không; chỉ ảnh hưởng tần suất in log, các input chiến lược và magic giữ nguyên. Áp bằng template `mentor_{xau,eur}_diag1.tpl` qua script `ApplyDataChartsDiag` và task `BuildBot-MT5-DATA-DiagRun` (operator đồng ý).
+- **Dữ liệu bị mất:** XAUUSD và EURUSD không có dữ liệu opportunity hợp lệ từ 2026-10-05 đến 2026-10-14T11:00Z.
