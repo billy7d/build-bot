@@ -148,6 +148,9 @@ class ForwardRuntimeConfig:
     heartbeat_interval_seconds: int = 30
     heartbeat_stale_seconds: int = 120
     poll_interval_seconds: float = 5.0
+    # Broker (server) time and this PC's clock can differ by a few seconds; the EA stamps a closed-bar event
+    # at the bar boundary, so without a tolerance a fast broker clock marks it as an event from the future.
+    future_tolerance_seconds: int = 30
     task_name: str = DEFAULT_TASK_NAME
     campaign_id: str | None = None
 
@@ -170,6 +173,8 @@ class ForwardRuntimeConfig:
             raise ForwardControlError("runtime telemetry_format must be jsonl, ndjson or csv")
         if self.heartbeat_interval_seconds < 1 or self.heartbeat_stale_seconds < self.heartbeat_interval_seconds:
             raise ForwardControlError("runtime heartbeat thresholds are invalid")
+        if self.future_tolerance_seconds < 0 or self.future_tolerance_seconds > 300:
+            raise ForwardControlError("runtime future_tolerance_seconds must be in [0, 300]")
         if self.poll_interval_seconds <= 0 or self.poll_interval_seconds > 60:
             raise ForwardControlError("runtime poll_interval_seconds must be in (0, 60]")
         for field_name in (
@@ -275,6 +280,7 @@ class ForwardRuntimeConfig:
             "heartbeat_interval_seconds": 30,
             "heartbeat_stale_seconds": 120,
             "poll_interval_seconds": 5.0,
+            "future_tolerance_seconds": 30,
             "task_name": DEFAULT_TASK_NAME,
         }
         values = dict(defaults)
@@ -1110,6 +1116,7 @@ class PersistentForwardCollector:
                     bundle_id=self.bundle.bundle_id,
                     telemetry_source=self.config.telemetry_source,
                     db_path=str(self.config.db),
+                    future_tolerance_seconds=int(self.config.future_tolerance_seconds),
                 ),
                 clock=self.clock,
             )
