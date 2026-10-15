@@ -320,5 +320,44 @@ class LateIngestRejectedTests(unittest.TestCase):
                 runtime.close()
 
 
+class FutureToleranceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle, cls.model, cls.index, _ = _fixture_bundle()
+
+    def _status(self, tolerance: int, seconds_ahead: int) -> str:
+        from datetime import datetime, timedelta
+
+        from agent.phase3.models import format_utc_timestamp, parse_utc_timestamp
+
+        event_time = format_utc_timestamp(parse_utc_timestamp(CLOCK) + timedelta(seconds=seconds_ahead))
+        with TemporaryDirectory() as directory:
+            runtime = Phase3Runtime.open(
+                Path(directory) / "phase3.sqlite",
+                self.bundle,
+                model_bundle=self.model,
+                similarity_index=self.index,
+                config=Phase3Config(
+                    mode="SMOKE",
+                    bundle_id=self.bundle.bundle_id,
+                    future_tolerance_seconds=tolerance,
+                    classification_min_resolved=1,
+                    regression_min_resolved=1,
+                ),
+                clock=lambda: CLOCK,
+            )
+            try:
+                runtime.create_run("tolerance-run", mode="SMOKE", started_at_utc="2022-01-01T00:00:00Z")
+                payload = _opportunity("skew", timestamp=event_time)
+                return str(runtime.process_payload("tolerance-run", payload, source="fixture")["status"])
+            finally:
+                runtime.close()
+
+    def test_event_slightly_ahead_of_pc_clock_is_accepted_with_tolerance(self) -> None:
+        self.assertEqual(self._status(0, 5), "REJECTED_STALE")
+        self.assertNotEqual(self._status(30, 5), "REJECTED_STALE")
+        self.assertEqual(self._status(30, 120), "REJECTED_STALE")
+
+
 if __name__ == "__main__":
     unittest.main()
