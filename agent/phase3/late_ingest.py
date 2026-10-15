@@ -1,4 +1,4 @@
-"""Nạp lại observation bị loại vì lỗi định dạng thời gian, gắn nhãn LATE_NOT_FORWARD.
+"""Nạp lại observation bị loại vì lỗi định dạng thời gian hoặc lệch đồng hồ, gắn nhãn LATE_NOT_FORWARD.
 
 Các bản ghi này đến sau khi collector đã bỏ qua chúng, nên dự đoán (nếu có) sẽ được ghi sau diễn biến giá.
 Vì vậy chúng không bao giờ vào forward: không tạo prediction, không vào campaign, không tính vào
@@ -15,6 +15,7 @@ from .ingestion.opportunity import canonicalize_observation, validate_opportunit
 from .models import format_utc_timestamp, utc_now
 
 REJECTION_REASON_PREFIX = "invalid UTC timestamp:"
+FUTURE_SKEW_REASON = "EVENT_TIMESTAMP_IN_FUTURE"
 
 
 def late_ingest_rejected_observations(
@@ -29,10 +30,11 @@ def late_ingest_rejected_observations(
         """
         SELECT forward_event_id, run_id, received_at_utc, raw_payload, raw_payload_sha256
         FROM phase3_forward_events
-        WHERE validation_status = 'REJECTED_SCHEMA' AND failure_reason LIKE ?
+        WHERE (validation_status = 'REJECTED_SCHEMA' AND failure_reason LIKE ?)
+           OR (validation_status = 'REJECTED_STALE' AND failure_reason = ?)
         ORDER BY received_at_utc, forward_event_id
         """,
-        (REJECTION_REASON_PREFIX + "%",),
+        (REJECTION_REASON_PREFIX + "%", FUTURE_SKEW_REASON),
     ).fetchall()
     stored = already = still_invalid = 0
     for row in rows:

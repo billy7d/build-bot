@@ -292,6 +292,15 @@ class LateIngestRejectedTests(unittest.TestCase):
                     source_event_id="legacy",
                     received_at_utc=CLOCK,
                 )
+                runtime._insert_rejection(
+                    "late-run",
+                    _opportunity("skewed", timestamp="2023-01-01T00:00:05Z"),
+                    source="fixture",
+                    reason="EVENT_TIMESTAMP_IN_FUTURE",
+                    status="REJECTED_STALE",
+                    source_event_id="skewed",
+                    received_at_utc=CLOCK,
+                )
                 other = runtime._insert_rejection(
                     "late-run", {"garbage": True}, source="fixture", reason="missing fields", source_event_id="other",
                     received_at_utc=CLOCK,
@@ -299,14 +308,14 @@ class LateIngestRejectedTests(unittest.TestCase):
                 self.assertEqual(other["status"], "REJECTED_SCHEMA")
                 predictions_before = runtime.connection.execute("SELECT COUNT(*) FROM phase3_predictions").fetchone()[0]
                 result = late_ingest_rejected_observations(runtime.connection, ingested_at_utc="2023-01-02T00:00:00Z")
-                self.assertEqual(result["candidates"], 1)
-                self.assertEqual(result["stored"], 1)
+                self.assertEqual(result["candidates"], 2)
+                self.assertEqual(result["stored"], 2)
                 self.assertFalse(result["counts_toward_forward"])
                 again = late_ingest_rejected_observations(runtime.connection, ingested_at_utc="2023-01-03T00:00:00Z")
                 self.assertEqual(again["stored"], 0)
-                self.assertEqual(again["already_present"], 1)
+                self.assertEqual(again["already_present"], 2)
                 row = runtime.connection.execute(
-                    "SELECT ingest_class, forward_eligible, canonical_opportunity_id FROM phase3_late_ingested_observations"
+                    "SELECT ingest_class, forward_eligible, canonical_opportunity_id FROM phase3_late_ingested_observations ORDER BY source_forward_event_id LIMIT 1"
                 ).fetchone()
                 self.assertEqual(row["ingest_class"], "LATE_NOT_FORWARD")
                 self.assertEqual(row["forward_eligible"], 0)
