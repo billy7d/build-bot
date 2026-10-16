@@ -120,4 +120,13 @@ Theo `docs/trading_agent/phase3/EA_CORE_HANDLE_RECOVERY_20261016.md` §5. Kết 
 
   `DIAG_SUMMARY forward` của candidate: `coreHandleStaleChecks=0 coreHandleRecreated=0 coreHandleRecreateFailed=0` (đúng kỳ vọng: handle khỏe trong tester).
 - **Report:** `D:\Trading\parity-v26-coreh-20261016\reports\parity\{v26,v63}_{base,cand}_2023.htm`; SHA-256: v26 base `0082E751...8712`, v26 cand `4EC7A0EC...54F7`, v63 base `CBA92619...3500`, v63 cand `8A9797F4...FFDD` (khác nhau chỉ do tên expert và thời gian chạy). Journal tách riêng ở `journals\`. Không commit report thô.
-- **Cửa sổ thêm 2025.01.01–2026.07.01:** đang chạy, sẽ cập nhật.
+- **Cửa sổ thêm 2025.01.01–2026.07.01: PASS** (cùng cấu hình, cùng cách so sánh):
+
+  | Preset | Lệnh (B/C) | Deal (B/C) | Cycle (B/C) | Signal mở lệnh | OrderSend | Net/PF/DD | Diagnostics | Diff journal | `CORE_HANDLE_*` |
+  |---|---:|---:|---:|---:|---:|---|---|---:|---:|
+  | V26 | 330 / 330 | 602 / 602 | 269 / 269 | 269 / 269 | 969 / 969 | giống hệt | equal | 0 | 0 |
+  | V63 | 278 / 278 | 498 / 498 | 217 / 217 | 217 / 217 | 844 / 844 | giống hệt | equal | 0 | 0 |
+
+  Report: `reports\parity\{v26,v63}_{base,cand}_2025_2026.htm`. Bộ đếm `coreHandle*` của candidate đều 0. Từ 2026.01.01 tester dùng real ticks, nên cửa sổ này phủ cả đoạn real ticks.
+- **Kết luận:** đủ điều kiện §5 để đề xuất merge `fix/ea-core-handle-recovery`. Giới hạn: tester chỉ chứng minh không đổi hành vi khi handle khỏe; đường phục hồi (`CORE_HANDLE_RECREATED`) chưa được kích hoạt trong tester, sẽ chỉ kiểm chứng được khi triển khai thật trên MT5-DATA (§6). Triển khai và gắn chart vẫn chờ operator duyệt.
+- File JSONL live của V26 giữ nguyên 87834 byte sau toàn bộ 8 lần chạy (đã kiểm tra lại).
