@@ -297,6 +297,8 @@ input bool ExportPhase3TelemetryJsonl = true;
 input bool ExportPhase3OpportunityJsonl = false;
 input bool ExportPhase3OpportunityInTester = false;
 input int ForwardHeartbeatBars = 24;
+// Tự phục hồi handle RSI/ATR lõi bị kẹt (0 = tắt). Chỉ hành động khi trạng thái đã không dựng được.
+input int CoreHandleRecoveryBars = 3;
 
 enum BiasState
 {
@@ -798,6 +800,10 @@ int diagForwardReconnects = 0;
 int diagForwardOrderRejects = 0;
 int diagForwardRiskRejects = 0;
 int diagForwardMissingStateBars = 0;
+int coreHandleStuckBars[4] = { 0, 0, 0, 0 };
+int diagCoreHandleStaleChecks = 0;
+int diagCoreHandleRecreated = 0;
+int diagCoreHandleRecreateFailed = 0;
 int diagShadowEvents = 0;
 int diagShadowLongEvents = 0;
 int diagShadowShortEvents = 0;
@@ -849,6 +855,83 @@ int TfIndex(ENUM_TIMEFRAMES tf)
       if(DataTFs[i] == tf)
          return i;
    return -1;
+}
+
+// ---------------------------------------------------------------------------
+// Tự phục hồi handle chỉ báo lõi
+// ---------------------------------------------------------------------------
+// Handle RSI/ATR chỉ được tạo một lần trong OnInit. Nếu EA khởi tạo ngay khi terminal vừa mở,
+// handle có thể kẹt vĩnh viễn: CopyBuffer luôn thiếu dữ liệu dù lịch sử đã đủ, nên mọi nến bị
+// bỏ qua dưới dạng MISSING_STATE mà không có cảnh báo (sự cố XAUUSD/EURUSD 07-14/10/2026).
+// Kiểm tra chạy mỗi nến EntryTF mới. Nó chỉ tạo lại handle khi lịch sử đủ nhưng buffer vẫn thiếu
+// trong CoreHandleRecoveryBars lần liên tiếp, tức là khi BuildState chắc chắn đã thất bại.
+// Với handle khỏe, hàm không thay đổi gì nên không ảnh hưởng tín hiệu, sizing hay exit.
+
+bool CoreHandleBuffersReady(int idx, int need)
+{
+   double probe[];
+   if(rsiHandles[idx] == INVALID_HANDLE || atrHandles[idx] == INVALID_HANDLE)
+      return false;
+   if(CopyBuffer(rsiHandles[idx], 0, 0, need, probe) < need)
+      return false;
+   if(CopyBuffer(atrHandles[idx], 0, 0, need, probe) < need)
+      return false;
+   return true;
+}
+
+void RecreateCoreHandles(int idx)
+{
+   ENUM_TIMEFRAMES tf = DataTFs[idx];
+   // Giải phóng trước: MT5 dùng chung một instance cho chỉ báo cùng tham số, nên tạo mới khi
+   // handle cũ còn sống có thể trả lại đúng instance đang kẹt.
+   if(rsiHandles[idx] != INVALID_HANDLE)
+      IndicatorRelease(rsiHandles[idx]);
+   if(atrHandles[idx] != INVALID_HANDLE)
+      IndicatorRelease(atrHandles[idx]);
+   rsiHandles[idx] = iRSI(_Symbol, tf, RSIPeriod, PRICE_CLOSE);
+   atrHandles[idx] = iATR(_Symbol, tf, ATRPeriod);
+   if(rsiHandles[idx] == INVALID_HANDLE || atrHandles[idx] == INVALID_HANDLE)
+   {
+      diagCoreHandleRecreateFailed++;
+      Print("CORE_HANDLE_RECREATE_FAILED tf=", TFName(tf), " error=", GetLastError(),
+            " (thử lại sau ", CoreHandleRecoveryBars, " nến)");
+      return;
+   }
+   diagCoreHandleRecreated++;
+   Print("CORE_HANDLE_RECREATED tf=", TFName(tf), " total=", diagCoreHandleRecreated);
+}
+
+void CheckCoreIndicatorHandles()
+{
+   if(CoreHandleRecoveryBars <= 0)
+      return;
+
+   const int need = 260;
+   for(int i = 0; i < 4; i++)
+   {
+      ENUM_TIMEFRAMES tf = DataTFs[i];
+      int historyBars = Bars(_Symbol, tf);
+      if(historyBars < need || CoreHandleBuffersReady(i, need))
+      {
+         if(coreHandleStuckBars[i] > 0 && historyBars >= need)
+            Print("CORE_HANDLE_READY tf=", TFName(tf), " after_stale_checks=", coreHandleStuckBars[i]);
+         // Thiếu lịch sử thật không phải lỗi handle; tạo lại handle không giúp được.
+         coreHandleStuckBars[i] = 0;
+         continue;
+      }
+
+      coreHandleStuckBars[i]++;
+      diagCoreHandleStaleChecks++;
+      Print("CORE_HANDLE_STALE tf=", TFName(tf), " check=", coreHandleStuckBars[i], "/", CoreHandleRecoveryBars,
+            " bars=", historyBars,
+            " rsiCalc=", BarsCalculated(rsiHandles[i]),
+            " atrCalc=", BarsCalculated(atrHandles[i]));
+      if(coreHandleStuckBars[i] < CoreHandleRecoveryBars)
+         continue;
+
+      RecreateCoreHandles(i);
+      coreHandleStuckBars[i] = 0;
+   }
 }
 
 string TFName(ENUM_TIMEFRAMES tf)
@@ -1452,6 +1535,13 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   if(CoreHandleRecoveryBars < 0)
+   {
+      Print("CoreHandleRecoveryBars must be 0 (off) or positive.");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   ArrayInitialize(coreHandleStuckBars, 0);
+
    if(MaxSetupAgeBars < 1 || LookbackExtremeBars < 1 || PullbackLookbackBars < 1)
    {
       Print("LookbackExtremeBars, MaxSetupAgeBars, and PullbackLookbackBars must be positive.");
@@ -1855,6 +1945,7 @@ void OnTick()
       return;
    lastEntryBarTime = barTime;
 
+   CheckCoreIndicatorHandles();
    AuditShadowSignalsOnClosedBar();
    AuditBlockedSignalShadowOnClosedBar();
 
@@ -7678,6 +7769,9 @@ void PrintDiagnosticsSummary(string source)
    forward += " orderRejects=" + IntegerToString(diagForwardOrderRejects);
    forward += " riskRejects=" + IntegerToString(diagForwardRiskRejects);
    forward += " missingStateBars=" + IntegerToString(diagForwardMissingStateBars);
+   forward += " coreHandleStaleChecks=" + IntegerToString(diagCoreHandleStaleChecks);
+   forward += " coreHandleRecreated=" + IntegerToString(diagCoreHandleRecreated);
+   forward += " coreHandleRecreateFailed=" + IntegerToString(diagCoreHandleRecreateFailed);
    Print(forward);
 
    string params = "DIAG_SUMMARY params source=" + source;
