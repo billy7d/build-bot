@@ -96,3 +96,28 @@ Số liệu lúc 2026-10-08T16:17Z. MT5-DATA chạy liên tục từ 2026-10-07T
 - **Rủi ro:** lỗi có thể lặp lại ở bất kỳ lần khởi động lại terminal nào (kể cả V26/V63) và không có cảnh báo. Đề xuất cho người phụ trách EA: tạo lại handle chỉ báo hoặc báo lỗi rõ khi `BuildState` thất bại liên tiếp; agent trên máy 1 không sửa EA.
 - **Sai lệch:** XAUUSD/EURUSD đang chạy với `DiagnosticsEveryBars=1` (preset gốc là 24) để theo dõi EA còn xử lý nến hay không; chỉ ảnh hưởng tần suất in log, các input chiến lược và magic giữ nguyên. Áp bằng template `mentor_{xau,eur}_diag1.tpl` qua script `ApplyDataChartsDiag` và task `BuildBot-MT5-DATA-DiagRun` (operator đồng ý).
 - **Dữ liệu bị mất:** XAUUSD và EURUSD không có dữ liệu opportunity hợp lệ từ 2026-10-05 đến 2026-10-14T11:00Z.
+
+## Cập nhật 2026-10-16: parity bản sửa EA tự phục hồi handle (`fix/ea-core-handle-recovery`)
+
+Theo `docs/trading_agent/phase3/EA_CORE_HANDLE_RECOVERY_20261016.md` §5. Kết quả: **PARITY PASS** cho cửa sổ bắt buộc 2023.04.01–2023.12.31, cả V26 và V63. Chưa triển khai EA mới lên chart nào.
+
+- **Môi trường:** terminal V26 (`D:\Trading\MT5-V26`) đang chạy live nên không chạy tester trong chính nó (tester bằng dòng lệnh cần tắt terminal). Dùng bản sao portable cô lập `D:\Trading\parity-v26-coreh-20261016`: cùng binary build 6230, cùng tài khoản demo `Exness-MT5Trial6` (log: `authorized ... demo account`), không chart, `[Experts] Enabled=0`, `AllowLiveTrading=0`. V26/V63/MT5-DATA và collector không bị dừng hay đụng tới.
+- **Source:** baseline `main` `307842fcb2cadee9416a1f0245a3d395b4500a79`; candidate `8aef15c` (`fix(ea): recover stuck core indicator handles ...`). Compile bằng MetaEditor của V26 (build 6230):
+
+  | Bản | File | Kết quả | Kích thước | SHA-256 `.ex5` |
+  |---|---|---|---:|---|
+  | Baseline | `ParityBaseline.ex5` | 0 errors, 0 warnings | 300472 | `2607022911B28E2A7029E1F6D3877E468AB44EB31163791C4BFE070A2C75F569` |
+  | Candidate | `ParityCandidate.ex5` | 0 errors, 0 warnings | 305076 | `50FDDBF76A9B6CD9FB662C0174B100B44ABA28B8846A01D377A1F198CBB92477` |
+
+- **Cấu hình tester:** BTCUSD H1, `Model=4`, deposit 5000 USD, leverage 1:10, `ExecutionMode=0`. Preset `83_v26_forward_demo_p3obs.set` và `84_v63_forward_demo_p3obs.set` từ `main`, **chỉ đổi** `ExportPhase3OpportunityInTester=true` thành `false` (giống nhau cho baseline và candidate) để tester không ghi vào file JSONL live; exporter này chỉ quan sát, không ảnh hưởng lệnh. Lý do: xem sự cố 2026-10-16 trong `machine1_forward_activation_20261001.md`.
+- **Sai lệch dữ liệu:** server demo chỉ có real ticks từ 2026-01-01, nên cửa sổ 2023 chạy bằng tick sinh từ M1 (`no real ticks, every tick generation used`). Parity vẫn hợp lệ vì baseline và candidate cùng môi trường, cùng 31.307.982 tick, 6576 nến.
+- **So sánh** bằng `tools/mt5/compare_execution_regression.py --require-diagnostics` (journal candidate đã bỏ dòng `CORE_HANDLE_*` và 3 bộ đếm mới) và diff toàn bộ journal theo từng dòng (bỏ tiền tố thời gian thực, tên file expert, dòng input `CoreHandleRecoveryBars=3`, thời gian đồng bộ). Net, PF, DD được so khớp nhưng không ghi giá trị (kết quả niêm phong).
+
+  | Preset, cửa sổ | Lệnh (B/C) | Deal (B/C) | Cycle (B/C) | Signal mở lệnh | OrderSend | Net/PF/DD | Diagnostics | Diff journal | `CORE_HANDLE_*` |
+  |---|---:|---:|---:|---:|---:|---|---|---:|---:|
+  | V26, 2023.04.01–12.31 | 148 / 148 | 246 / 246 | 93 / 93 | 93 / 93 | 385 / 385 | giống hệt | equal | 0 | 0 |
+  | V63, 2023.04.01–12.31 | 142 / 142 | 232 / 232 | 86 / 86 | 86 / 86 | 356 / 356 | giống hệt | equal | 0 | 0 |
+
+  `DIAG_SUMMARY forward` của candidate: `coreHandleStaleChecks=0 coreHandleRecreated=0 coreHandleRecreateFailed=0` (đúng kỳ vọng: handle khỏe trong tester).
+- **Report:** `D:\Trading\parity-v26-coreh-20261016\reports\parity\{v26,v63}_{base,cand}_2023.htm`; SHA-256: v26 base `0082E751...8712`, v26 cand `4EC7A0EC...54F7`, v63 base `CBA92619...3500`, v63 cand `8A9797F4...FFDD` (khác nhau chỉ do tên expert và thời gian chạy). Journal tách riêng ở `journals\`. Không commit report thô.
+- **Cửa sổ thêm 2025.01.01–2026.07.01:** đang chạy, sẽ cập nhật.
