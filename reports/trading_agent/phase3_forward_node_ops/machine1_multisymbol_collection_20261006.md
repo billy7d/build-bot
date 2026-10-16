@@ -130,3 +130,55 @@ Theo `docs/trading_agent/phase3/EA_CORE_HANDLE_RECOVERY_20261016.md` §5. Kết 
   Report: `reports\parity\{v26,v63}_{base,cand}_2025_2026.htm`. Bộ đếm `coreHandle*` của candidate đều 0. Từ 2026.01.01 tester dùng real ticks, nên cửa sổ này phủ cả đoạn real ticks.
 - **Kết luận:** đủ điều kiện §5 để đề xuất merge `fix/ea-core-handle-recovery`. Giới hạn: tester chỉ chứng minh không đổi hành vi khi handle khỏe; đường phục hồi (`CORE_HANDLE_RECREATED`) chưa được kích hoạt trong tester, sẽ chỉ kiểm chứng được khi triển khai thật trên MT5-DATA (§6). Triển khai và gắn chart vẫn chờ operator duyệt.
 - File JSONL live của V26 giữ nguyên 87834 byte sau toàn bộ 8 lần chạy (đã kiểm tra lại).
+
+## Cập nhật 2026-10-17: triển khai bản sửa core-handle lên MT5-DATA (VIỆC A, chưa xong)
+
+Theo `docs/trading_agent/phase3/EA_CORE_HANDLE_RECOVERY_20261016.md` §6 bước 1–2, operator duyệt 2026-10-17. V26/V63 **không** cập nhật. Checkout runtime `D:\Trading\buildbot` không đổi.
+
+- **Source:** `main` `5ec8c85d2e7b6e62b14509b2edb9c3ec46464dd0` lấy từ clone báo cáo; blob `outputs/Mentor_RSI_MTF_v1.mq5` = `d0a8ae26c2f21c482719ae5c9db7492df1e115f3` (khớp).
+- **Sao lưu bản cũ:** `D:\Trading\MT5-DATA\llm-agent\backup_ea_20261016\` (`.mq5` blob `49f924e3…`, `.ex5`).
+- **Compile** bằng MetaEditor của MT5-DATA (build 6230), compile thử trong thư mục tạm (đã xoá), rồi compile tại chỗ trong `MQL5\Experts` lúc **2026-10-16T17:01:37Z**:
+
+  | Bản | Kết quả | Kích thước | SHA-256 `.ex5` |
+  |---|---|---:|---|
+  | Cũ (đang chạy từ 2026-10-05) | — | 300602 | `8bc81e8b8a761e3cf0043d2703e47292ed7cea83ebd0fb576f6ec6f182e879b6` |
+  | Mới (`5ec8c85`) | 0 errors, 0 warnings | 305290 | `85AB9E065F7A37159D9D10D455AD2CAB3BCCDB2578CEF4A3CBEBE6C4FCB9BD72` |
+
+- **Chưa gắn lại được:** compile bằng dòng lệnh không làm terminal nạp lại EA (journal terminal và log EA không có dòng `removed`/`loaded successfully` sau 17:01Z). Ba chart vẫn chạy **code cũ trong bộ nhớ**; file `.ex5` trên đĩa đã là bản mới, nên lần khởi động terminal kế tiếp (task `BuildBot-MT5-DATA-DiagRun`/`-Autostart`) sẽ nạp bản mới.
+- **Cần operator:** gắn lại bằng cách khởi động lại MT5-DATA (task DiagRun dựng lại 3 chart, giữ template `diag1` cho XAU/EUR). Các lần khởi động trước (07/10, 14/10) đều phải bật Algo Trading bằng tay, nên đang chờ operator. Mốc "thời điểm đổi build" chính thức là lúc EA mới được nạp trên chart, sẽ ghi sau.
+- **Còn phải kiểm sau khi nạp:** journal EA khởi tạo, mở đúng `phase3/opportunities/Mentor_RSI_MTF_<magic>_<symbol>_H1.jsonl`, không có `MISSING_STATE` kéo dài ở nến H1 kế tiếp; theo dõi `CORE_HANDLE_*` sau mỗi lần terminal khởi động lại.
+
+## Cập nhật 2026-10-17: kiểm chứng tách file opportunity khi chạy tester (VIỆC B) — PASS
+
+Theo `docs/trading_agent/phase3/EA_TESTER_TELEMETRY_ISOLATION_20261017.md` §3, branch `fix/ea-tester-telemetry-isolation` (`2fcfc270cc403982947d3d9fd381534b7fa7bdf9`, blob `9ae350e8…`). Không merge.
+
+- **Môi trường:** bản sao cô lập `D:\Trading\parity-v26-coreh-20261016` (tài khoản demo, không chart, `[Experts] Enabled=0`, `AllowLiveTrading=0`). V26/V63/MT5-DATA không bị dừng hay đụng tới.
+- **Compile** (MetaEditor của bản sao, build 6230):
+
+  | Bản | Source | Kết quả | Kích thước | SHA-256 `.ex5` |
+  |---|---|---|---:|---|
+  | `TelemBaseline` | `main` `5ec8c85` | 0 errors, 0 warnings | 304868 | `A25690CD15B12936690034D6346236F129C74EFDECD8A3E5A314F6A1173FC31A` |
+  | `TelemCandidate` | `2fcfc27` | 0 errors, 0 warnings | 305648 | `8BFC9AD103F9A73499ED915C14ACCBB68F250D2303B1580251D94D2AB53C28ED` |
+
+- **Cấu hình:** BTCUSD H1, `Model=4`, 2023.04.01–2023.12.31, deposit 5000, 1:10. Baseline dùng `83_v26_forward_demo_p3obs_parity.set` (chỉ khác preset 83 ở `ExportPhase3OpportunityInTester=false`); candidate dùng preset 83 nguyên bản (SHA-256 `b5ead1a5…2abf`, cờ `true`), chạy hai lần. Chạy 18:02Z–18:11Z.
+- **File live** `Common\Files\phase3\opportunities\` (đọc bằng `FileShare.ReadWrite`, chỉ đọc), đo trước (18:02:18Z), giám sát mỗi 15 giây đến 18:33Z, và đo lại 20:17Z: **cả 6 file không đổi kích thước và SHA-256**.
+
+  | File | Byte | SHA-256 |
+  |---|---:|---|
+  | `..._26062901_BTCUSD_M15.jsonl` | 0 | `E3B0C442…B855` |
+  | `..._26072626_BTCUSD_H1.jsonl` (V26) | 87834 | `589CB591…4397` |
+  | `..._26072663_BTCUSD_H1.jsonl` (V63) | 41848 | `CA948028…0E4D` |
+  | `..._26072701_ETHUSD_H1.jsonl` | 15413 | `27DB236B…763C` |
+  | `..._26072702_XAUUSD_H1.jsonl` | 6992 | `27E5DCB8…31D6` |
+  | `..._26072703_EURUSD_H1.jsonl` | 15236 | `26C2FCE9…8A83` |
+
+- **So sánh** baseline với từng lần candidate bằng `compare_execution_regression.py --require-diagnostics` và diff journal theo dòng (Net/PF/DD so khớp, không ghi giá trị):
+
+  | | Lệnh (B/C) | Deal | Cycle | OrderSend | Net/PF/DD | Diagnostics | Diff journal |
+  |---|---:|---:|---:|---:|---|---|---:|
+  | Candidate lần 1 | 148 / 148 | 246 / 246 | 93 / 93 | 385 | giống hệt | equal | 3 dòng |
+  | Candidate lần 2 | 148 / 148 | 246 / 246 | 93 / 93 | 385 | giống hệt | equal | 3 dòng |
+
+  3 dòng khác đều được phép: dòng input `ExportPhase3OpportunityInTester` (false/true) và dòng `PHASE3 opportunity exporter initialized ... path=...phase3/tester/opportunities/...` chỉ có ở candidate.
+- **File tester:** baseline không tạo file (đúng, cờ tắt). Candidate tạo `phase3/tester/opportunities/Mentor_RSI_MTF_26072626_BTCUSD_H1.jsonl`, 736 dòng, cả 736 dòng mang schema `phase3-opportunity-observation/1`. Lần chạy 2: vẫn 736 dòng, 1026705 byte, SHA-256 giống hệt lần 1 (bị ghi đè, không gấp đôi).
+- **Kết luận:** đủ điều kiện §3 để đề xuất merge `fix/ea-tester-telemetry-isolation`. Report: `reports\parity\telem_v26_{base,cand,cand2}_2023.htm`; journal `journals\telem_v26_2023_*.log`; snapshot `runs\telem_live_{before,after}.json`. Không commit report thô hay nội dung JSONL. File tester (1 file trong `phase3/tester/`) để nguyên, không phải file live.

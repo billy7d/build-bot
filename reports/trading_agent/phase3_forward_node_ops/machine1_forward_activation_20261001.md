@@ -161,3 +161,8 @@ Task `BuildBot-Phase3-Forward`: state `Running`, trigger AtLogOn, logon type Int
 - **Quyết định operator (2026-10-16):** để nguyên, chỉ ghi chú. Không xóa dòng vì collector fail-closed khi file bị cắt ngắn.
 - **Lưu ý khi chạy `late-ingest-rejected` lần sau:** phải loại 26 bản ghi này (event năm 2023, `source_observation_id` timestamp 1680314400–1680786000); đây là dữ liệu tester, không phải evidence muộn.
 - **Phòng tránh:** mọi lần chạy Strategy Tester trên máy 1 dùng bản sao preset với `ExportPhase3OpportunityInTester=false`, hoặc magic khác với V26/V63 (26072626, 26072663). Các lần chạy parity sau đó đã dùng cách này; file live không bị ghi thêm (kích thước giữ 87834 byte sau 4 lần chạy đầy đủ cửa sổ 2023).
+
+## Cập nhật 2026-10-17: kiểm chứng bản sửa tách file tester (PASS) và EA mới trên MT5-DATA
+
+- `fix/ea-tester-telemetry-isolation` (`2fcfc27`) kiểm chứng PASS trên máy 1: candidate chạy preset 83 nguyên bản (cờ `true`) hai lần, chỉ ghi vào `phase3/tester/opportunities/`; file live V26 (87834 byte) và V63 (41848 byte) không đổi kích thước và SHA-256. Chi tiết trong `machine1_multisymbol_collection_20261006.md`.
+- V26/V63 không đổi EA, collector không bị đụng tới. Bản sửa core-handle đã compile lên MT5-DATA nhưng chưa nạp lên chart (chờ operator khởi động lại MT5-DATA và bật Algo Trading).
