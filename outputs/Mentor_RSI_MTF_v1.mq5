@@ -1198,9 +1198,17 @@ void EmitPhase3Telemetry(ENUM_ORDER_TYPE type, const TFState &entry, const TFSta
    FileFlush(phase3TelemetryHandle);
 }
 
+// FILE_COMMON dùng chung cho mọi terminal, kể cả bản sao portable chạy Strategy Tester. Tester phải
+// ghi vào thư mục riêng, nếu không một backtest cùng magic sẽ append vào file live mà collector đang đọc
+// (sự cố 26 dòng backtest 2023 trong file V26, 2026-10-16).
+string Phase3OpportunityFolder()
+{
+   return (bool)MQLInfoInteger(MQL_TESTER) ? "phase3/tester/opportunities" : "phase3/opportunities";
+}
+
 string Phase3OpportunityFileName()
 {
-   return "phase3/opportunities/Mentor_RSI_MTF_" + IntegerToString(MagicNumber) + "_" +
+   return Phase3OpportunityFolder() + "/Mentor_RSI_MTF_" + IntegerToString(MagicNumber) + "_" +
           _Symbol + "_" + Phase3TimeframeCode(EntryTF) + ".jsonl";
 }
 
@@ -1210,10 +1218,15 @@ void OpenPhase3OpportunityTelemetry()
       ((bool)MQLInfoInteger(MQL_TESTER) && !ExportPhase3OpportunityInTester))
       return;
 
+   bool tester = (bool)MQLInfoInteger(MQL_TESTER);
    FolderCreate("phase3", FILE_COMMON);
-   FolderCreate("phase3/opportunities", FILE_COMMON);
-   int flags = FILE_READ | FILE_WRITE | FILE_TXT | FILE_ANSI |
-               FILE_COMMON | FILE_SHARE_READ | FILE_SHARE_WRITE;
+   if(tester)
+      FolderCreate("phase3/tester", FILE_COMMON);
+   FolderCreate(Phase3OpportunityFolder(), FILE_COMMON);
+   // Live append qua các lần khởi động lại; tester ghi mới mỗi lần chạy để parity không trộn run cũ.
+   int flags = FILE_WRITE | FILE_TXT | FILE_ANSI | FILE_COMMON | FILE_SHARE_READ | FILE_SHARE_WRITE;
+   if(!tester)
+      flags |= FILE_READ;
    phase3OpportunityTelemetryHandle = FileOpen(Phase3OpportunityFileName(), flags);
    if(phase3OpportunityTelemetryHandle == INVALID_HANDLE)
    {
