@@ -368,5 +368,49 @@ class FutureToleranceTests(unittest.TestCase):
         self.assertEqual(self._status(30, 120), "REJECTED_STALE")
 
 
+class MissedFileRegionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.bundle, cls.model, cls.index, _ = _fixture_bundle()
+
+    def test_missed_region_is_stored_as_late_evidence_without_forward_effects(self) -> None:
+        import json
+
+        from agent.phase3.late_ingest import late_ingest_rejected_observations, record_missed_file_region
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = Phase3Runtime.open(
+                root / "phase3.sqlite",
+                self.bundle,
+                model_bundle=self.model,
+                similarity_index=self.index,
+                config=Phase3Config(mode="SMOKE", bundle_id=self.bundle.bundle_id),
+            )
+            try:
+                runtime.create_run("missed-run", mode="SMOKE", started_at_utc="2023-01-01T00:00:00Z")
+                before_start = _opportunity("before", timestamp="2022-06-01T00:00:00Z")
+                first = _opportunity("one", timestamp="2023-02-01T00:00:00Z")
+                second = _opportunity("two", timestamp="2023-02-01T01:00:00Z")
+                lines = [json.dumps(item) for item in (before_start, first, second)]
+                lines.append('{"schema_version": "phase3-opportunity-obs')
+                path = root / "stream.jsonl"
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                result = record_missed_file_region(runtime.connection, run_id="missed-run", file_path=path, start_offset=0)
+                self.assertEqual(result["recorded"], 2)
+                self.assertEqual(result["skipped_before_forward_start"], 1)
+                self.assertEqual(result["invalid_or_partial"], 1)
+                again = record_missed_file_region(runtime.connection, run_id="missed-run", file_path=path, start_offset=0)
+                self.assertEqual(again["recorded"], 0)
+                self.assertEqual(again["already_known"], 2)
+                late = late_ingest_rejected_observations(runtime.connection)
+                self.assertEqual(late["stored"], 2)
+                self.assertFalse(late["counts_toward_forward"])
+                for table in ("phase3_predictions", "phase3_opportunity_observations", "phase3_canonical_opportunities"):
+                    self.assertEqual(runtime.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0, table)
+            finally:
+                runtime.close()
+
+
 if __name__ == "__main__":
     unittest.main()
