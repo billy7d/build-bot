@@ -17,7 +17,7 @@ from .campaign import CampaignError, campaign_coverage, declare_campaign, evalua
 from .config import Phase3Config
 from .evaluation.metrics import evaluate_forward_records
 from .evaluation.reporting import write_phase3_reports
-from .late_ingest import late_ingest_rejected_observations
+from .late_ingest import late_ingest_rejected_observations, record_missed_file_region
 from .forward import (
     ForwardControlError,
     PersistentForwardCollector,
@@ -143,6 +143,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="store timestamp-rejected observations as LATE_NOT_FORWARD evidence (never counted as forward)",
     )
     _common_arguments(late)
+
+    missed = commands.add_parser(
+        "late-ingest-file-region",
+        help="record complete lines inside a byte range of the primary opportunity file that the collector skipped, as LATE_NOT_FORWARD evidence",
+    )
+    _common_arguments(missed)
+    missed.add_argument("--start-offset", type=int, required=True, help="byte offset where the skipped region starts")
+    missed.add_argument("--end-offset", type=int, default=None, help="byte offset where the region ends (default end of file)")
 
     for name, text in (
         ("campaign-sync", "attach every eligible FORWARD run to the campaign (no manual selection)"),
@@ -592,6 +600,25 @@ def _command_late_ingest_rejected(args: argparse.Namespace) -> int:
     return 0
 
 
+def _command_late_ingest_file_region(args: argparse.Namespace) -> int:
+    config, runtime, _ = _campaign_runtime_optional(args)
+    try:
+        run_id = getattr(args, "run_id", None)
+        if not run_id:
+            run_id = str(json.loads(Path(config.current_run_path).read_text(encoding="utf-8"))["run_id"])
+        recorded = record_missed_file_region(
+            runtime.connection,
+            run_id=str(run_id),
+            file_path=config.primary_opportunity,
+            start_offset=args.start_offset,
+            end_offset=args.end_offset,
+        )
+        _print({"run_id": str(run_id), "record": recorded, "late": late_ingest_rejected_observations(runtime.connection)})
+    finally:
+        runtime.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     commands = {
@@ -614,6 +641,7 @@ def main(argv: list[str] | None = None) -> int:
         "campaign-status": _command_campaign_status,
         "evaluate-campaign": _command_evaluate_campaign,
         "late-ingest-rejected": _command_late_ingest_rejected,
+        "late-ingest-file-region": _command_late_ingest_file_region,
     }
     return int(commands[args.command](args))
 
